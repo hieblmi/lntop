@@ -1,4 +1,4 @@
-FROM golang:1.19-alpine as builder
+FROM golang:1.24.6-alpine as builder
 
 # install build dependencies
 RUN apk add --no-cache --update git gcc musl-dev
@@ -14,12 +14,16 @@ COPY "$LNTOP_SRC_PATH/go.sum" .
 WORKDIR $GOPATH/src/github.com/edouardparis/lntop
 COPY "$LNTOP_SRC_PATH" .
 
+
+# allow builds to work outside the docker container too.
+ENV CGO_ENABLED=0
+
 ENV GO111MODULE=on
 RUN go install ./...
 
 # ---------------------------------------------------------------------------------------------------------------------------
 
-FROM golang:1.19-alpine as final
+FROM golang:1.24.6-alpine as final
 
 RUN apk add --no-cache \
     bash fish \
@@ -37,4 +41,4 @@ COPY --from=builder /go/bin/lntop /bin/
 
 WORKDIR /root
 
-COPY "home" .
+COPY "$LNTOP_CONF_PATH/home" .
