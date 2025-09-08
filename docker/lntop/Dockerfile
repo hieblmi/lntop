@@ -14,6 +14,10 @@ COPY "$LNTOP_SRC_PATH/go.sum" .
 WORKDIR $GOPATH/src/github.com/edouardparis/lntop
 COPY "$LNTOP_SRC_PATH" .
 
+
+# allow builds to work outside the docker container too.
+ENV CGO_ENABLED=0
+
 ENV GO111MODULE=on
 RUN go install ./...
 
