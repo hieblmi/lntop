@@ -66,7 +66,5 @@ func (t *FwdingHist) Update(events []*models.ForwardingEvent) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.Clear()
-	for _, event := range events {
-		t.list = append(t.list, event)
-	}
+	t.list = append(t.list, events...)
 }

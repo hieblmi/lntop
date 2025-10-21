@@ -32,29 +32,39 @@ func (p *PubSub) invoices(ctx context.Context, sub chan *events.Event) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	go func() {
-		for invoice := range invoices {
-			p.logger.Debug(
-				"receive invoice",
-				logging.Object("invoice", invoice),
-			)
+		for {
+			select {
+			case <-ctx.Done():
+				p.wg.Done()
+				return
+			case invoice, ok := <-invoices:
+				if !ok {
+					p.wg.Done()
+					return
+				}
+				p.logger.Debug(
+					"receive invoice",
+					logging.Object("invoice", invoice),
+				)
 
-			if invoice.Settled {
-				sub <- events.NewWithData(
-					events.InvoiceSettled, invoice,
-				)
-			} else {
-				sub <- events.NewWithData(
-					events.InvoiceCreated, invoice,
-				)
+				if invoice.Settled {
+					sub <- events.NewWithData(
+						events.InvoiceSettled, invoice,
+					)
+				} else {
+					sub <- events.NewWithData(
+						events.InvoiceCreated, invoice,
+					)
+				}
 			}
 		}
-		p.wg.Done()
 	}()
 
 	go func() {
 		err := p.network.SubscribeInvoice(ctx, invoices)
 		if err != nil {
-			p.logger.Error("SubscribeInvoice returned an error", logging.Error(err))
+			p.logger.Error("SubscribeInvoice returned an error",
+				logging.Error(err))
 		}
 		p.wg.Done()
 	}()
@@ -62,7 +72,6 @@ func (p *PubSub) invoices(ctx context.Context, sub chan *events.Event) {
 	go func() {
 		<-p.stop
 		cancel()
-		close(invoices)
 		p.wg.Done()
 	}()
 }
@@ -73,11 +82,20 @@ func (p *PubSub) transactions(ctx context.Context, sub chan *events.Event) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	go func() {
-		for tx := range transactions {
-			p.logger.Debug("receive transaction", logging.String("tx_hash", tx.TxHash))
-			sub <- events.New(events.TransactionCreated)
+		for {
+			select {
+			case <-ctx.Done():
+				p.wg.Done()
+				return
+			case tx, ok := <-transactions:
+				if !ok {
+					p.wg.Done()
+					return
+				}
+				p.logger.Debug("receive transaction", logging.String("tx_hash", tx.TxHash))
+				sub <- events.New(events.TransactionCreated)
+			}
 		}
-		p.wg.Done()
 	}()
 
 	go func() {
@@ -91,7 +109,6 @@ func (p *PubSub) transactions(ctx context.Context, sub chan *events.Event) {
 	go func() {
 		<-p.stop
 		cancel()
-		close(transactions)
 		p.wg.Done()
 	}()
 }
@@ -102,13 +119,22 @@ func (p *PubSub) routingUpdates(ctx context.Context, sub chan *events.Event) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	go func() {
-		for hu := range routingUpdates {
-			p.logger.Debug("receive htlcUpdate")
-			if !hu.IsEmpty() {
-				sub <- events.NewWithData(events.RoutingEventUpdated, hu)
+		for {
+			select {
+			case <-ctx.Done():
+				p.wg.Done()
+				return
+			case hu, ok := <-routingUpdates:
+				if !ok {
+					p.wg.Done()
+					return
+				}
+				p.logger.Debug("receive htlcUpdate")
+				if !hu.IsEmpty() {
+					sub <- events.NewWithData(events.RoutingEventUpdated, hu)
+				}
 			}
 		}
-		p.wg.Done()
 	}()
 
 	go func() {
@@ -122,7 +148,6 @@ func (p *PubSub) routingUpdates(ctx context.Context, sub chan *events.Event) {
 	go func() {
 		<-p.stop
 		cancel()
-		close(routingUpdates)
 		p.wg.Done()
 	}()
 }
@@ -133,11 +158,20 @@ func (p *PubSub) graphUpdates(ctx context.Context, sub chan *events.Event) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	go func() {
-		for gu := range graphUpdates {
-			p.logger.Debug("receive graph update")
-			sub <- events.NewWithData(events.GraphUpdated, gu)
+		for {
+			select {
+			case <-ctx.Done():
+				p.wg.Done()
+				return
+			case gu, ok := <-graphUpdates:
+				if !ok {
+					p.wg.Done()
+					return
+				}
+				p.logger.Debug("receive graph update")
+				sub <- events.NewWithData(events.GraphUpdated, gu)
+			}
 		}
-		p.wg.Done()
 	}()
 
 	go func() {
@@ -151,7 +185,6 @@ func (p *PubSub) graphUpdates(ctx context.Context, sub chan *events.Event) {
 	go func() {
 		<-p.stop
 		cancel()
-		close(graphUpdates)
 		p.wg.Done()
 	}()
 }
@@ -162,11 +195,20 @@ func (p *PubSub) channels(ctx context.Context, sub chan *events.Event) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	go func() {
-		for range channels {
-			p.logger.Debug("channels updated")
-			sub <- events.New(events.ChannelActive)
+		for {
+			select {
+			case <-ctx.Done():
+				p.wg.Done()
+				return
+			case _, ok := <-channels:
+				if !ok {
+					p.wg.Done()
+					return
+				}
+				p.logger.Debug("channels updated")
+				sub <- events.New(events.ChannelActive)
+			}
 		}
-		p.wg.Done()
 	}()
 
 	go func() {
@@ -180,7 +222,6 @@ func (p *PubSub) channels(ctx context.Context, sub chan *events.Event) {
 	go func() {
 		<-p.stop
 		cancel()
-		close(channels)
 		p.wg.Done()
 	}()
 }
