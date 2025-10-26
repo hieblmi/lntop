@@ -1,8 +1,8 @@
 # lntop
 
-[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/edouardparis/lntop/blob/master/LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/edouardparis/lntop)](https://goreportcard.com/report/github.com/edouardparis/lntop)
-[![Godoc](https://godoc.org/github.com/edouardparis/lntop?status.svg)](https://godoc.org/github.com/edouardparis/lntop)
+[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/hieblmi/lntop/master/LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/hieblmi/lntoptps://goreportcard.com/report/github.com/hieblhieblmi/lntop
+[![Godoc](https://godoc.org/github.com/hieblmi/lntopus.svg)](https://godoc.org/github.com/hieblhieblmi/lntop
 
 `lntop` is an interactive text-mode channels viewer for Unix systems.
 
@@ -14,10 +14,10 @@
 Require the [go programming language](https://golang.org/) (version >= 1.19.1)
 
 **Raspberry Pi users: be aware that Raspbian ships with Go 1.11** ( see
-[#30](https://github.com/edouardparis/lntop/issues/30) )
+[#30](https://github.com/hieblmi/lntopes/30) )
 
 ```
-git clone https://github.com/edouardparis/lntop.git
+git clone https://github.com/hieblmi/lntop
 cd lntop
 go build   // creates a binary `lntop` in directory
 go install // creates a binary and move it in your $GOBIN path
@@ -27,7 +27,7 @@ go install // creates a binary and move it in your $GOBIN path
 With Go version >= 1.16, you can use [`go-install`](https://golang.org/ref/mod#go-install)
 
 ```
-go install github.com/edouardparis/lntop@latest
+go install github.com/hieblmi/lntopst
 ```
 
 Note: If you are using [**Umbrel**](https://getumbrel.com) or [**Citadel**](https://runcitadel.space) you can simply install the [**Lightning Shell**](https://lightningshell.app) app from the respective dashboard. This will give you `lntop` which should just work without any additional configuration.
@@ -66,27 +66,29 @@ pool_capacity = 4
 # It is possible to add, remove and order columns of the
 # table with the array columns. The available values are:
 columns = [
-	"STATUS",      # status of the channel
-	"ALIAS",       # alias of the channel node
-	"GAUGE",       # ascii bar with percent local/capacity
-	"LOCAL",       # the local amount of the channel
-	"REMOTE",    # the remote amount of the channel
-	#"BASE_OUT"    # the outgoing base fee of the channel
-	#"RATE_OUT"    # the outgoing fee rate in ppm of the channel
-	#"BASE_IN"    # the incoming base fee of the channel
-	#"RATE_IN"    # the incoming fee rate in ppm of the channel
-	"CAP",         # the total capacity of the channel
-	"SENT",        # the total amount sent
-	"RECEIVED",    # the total amount received
-	"HTLC",        # the number of pending HTLC
-	"UNSETTLED",   # the amount unsettled in the channel
-	"CFEE",        # the commit fee
-	"LAST UPDATE", # last update of the channel
-	# "AGE",       # approximate channel age
-	"PRIVATE",     # true if channel is private
-	"ID",          # the id of the channel
-	# "SCID",      # short channel id (BxTxO formatted)
-	# "NUPD",      # number of channel updates
+	"STATUS",        # status of the channel
+	"ALIAS",         # alias of the channel node
+	"GAUGE",         # ascii bar with percent local/capacity
+	"LOCAL",         # the local amount of the channel
+	"REMOTE",        # the remote amount of the channel
+	#"BASE_OUT"      # the outgoing base fee of the channel
+	#"RATE_OUT"      # the outgoing fee rate in ppm of the channel
+	#"BASE_IN"       # the remote peer's base fee for routing TO you
+	#"RATE_IN"       # the remote peer's fee rate for routing TO you
+	#"INBOUND_BASE"  # YOUR inbound base fee (LND 0.18+, can be negative)
+	#"INBOUND_RATE"  # YOUR inbound fee rate (LND 0.18+, can be negative)
+	"CAP",           # the total capacity of the channel
+	"SENT",          # the total amount sent
+	"RECEIVED",      # the total amount received
+	"HTLC",          # the number of pending HTLC
+	"UNSETTLED",     # the amount unsettled in the channel
+	"CFEE",          # the commit fee
+	"LAST UPDATE",   # last update of the channel
+	# "AGE",         # approximate channel age
+	"PRIVATE",       # true if channel is private
+	"ID",            # the id of the channel
+	# "SCID",        # short channel id (BxTxO formatted)
+	# "NUPD",        # number of channel updates
 ]
 
 [views.channels.options]
@@ -110,34 +112,38 @@ columns = [
 
 [views.routing]
 columns = [
-	"DIR",            # event type:  send, receive, forward
-	"STATUS",         # one of: active, settled, failed, linkfail
-	"IN_CHANNEL",     # channel id of the incomming channel
-	"IN_ALIAS",       # incoming channel node alias
-	# "IN_SCID",      # incoming short channel id (BxTxO)
-	# "IN_HTLC",      # htlc id on incoming channel
-	# "IN_TIMELOCK",  # incoming timelock height
-	"OUT_CHANNEL",    # channel id of the outgoing channel
-	"OUT_ALIAS",      # outgoing channel node alias
-	# "OUT_SCID",     # outgoing short channel id (BxTxO)
-	# "OUT_HTLC",     # htlc id on outgoing channel
-	# "OUT_TIMELOCK", # outgoing timelock height
-	"AMOUNT",         # routed amount
-	"FEE",            # routing fee
-	"LAST UPDATE",    # last update
-	"DETAIL",         # error description
+	"DIR",                # event type:  send, receive, forward
+	"STATUS",             # one of: active, settled, failed, linkfail
+	"IN_CHANNEL",         # channel id of the incomming channel
+	"IN_ALIAS",           # incoming channel node alias
+	# "IN_SCID",          # incoming short channel id (BxTxO)
+	# "IN_HTLC",          # htlc id on incoming channel
+	# "IN_TIMELOCK",      # incoming timelock height
+	# "INBOUND_BASE_IN",  # YOUR inbound base fee on incoming channel (LND 0.18+)
+	# "INBOUND_RATE_IN",  # YOUR inbound fee rate on incoming channel (LND 0.18+)
+	"OUT_CHANNEL",        # channel id of the outgoing channel
+	"OUT_ALIAS",          # outgoing channel node alias
+	# "OUT_SCID",         # outgoing short channel id (BxTxO)
+	# "OUT_HTLC",         # htlc id on outgoing channel
+	# "OUT_TIMELOCK",     # outgoing timelock height
+	"AMOUNT",             # routed amount
+	"FEE",                # routing fee
+	"LAST UPDATE",        # last update
+	"DETAIL",             # error description
 ]
 
 [views.fwdinghist]
 columns = [
-         "ALIAS_IN",	# peer alias name of the incoming peer
-         "ALIAS_OUT",   # peer alias name of the outgoing peer
-         "AMT_IN",	# amount of sats received
-         "AMT_OUT",     # amount of sats forwarded
-         "FEE",      	# earned fee
-         "TIMESTAMP_NS",# forwarding event timestamp
-#        "CHAN_ID_IN",  # channel id of the incomming channel
-#        "CHAN_ID_OUT", # channel id of the outgoing channel
+         "ALIAS_IN",          # peer alias name of the incoming peer
+         "ALIAS_OUT",         # peer alias name of the outgoing peer
+         "AMT_IN",            # amount of sats received
+         "AMT_OUT",           # amount of sats forwarded
+         "FEE",               # earned fee
+         "TIMESTAMP_NS",      # forwarding event timestamp
+#        "CHAN_ID_IN",        # channel id of the incomming channel
+#        "CHAN_ID_OUT",       # channel id of the outgoing channel
+#        "INBOUND_BASE_IN",   # YOUR inbound base fee on incoming channel (LND 0.18+)
+#        "INBOUND_RATE_IN",   # YOUR inbound fee rate on incoming channel (LND 0.18+)
 ]
 
 [views.fwdinghist.options]

@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/edouardparis/lntop/events"
-	"github.com/edouardparis/lntop/logging"
-	"github.com/edouardparis/lntop/network"
-	"github.com/edouardparis/lntop/network/models"
+	"github.com/hieblmi/lntop/events"
+	"github.com/hieblmi/lntop/logging"
+	"github.com/hieblmi/lntop/network"
+	"github.com/hieblmi/lntop/network/models"
 )
 
 type tickerFunc func(context.Context, logging.Logger, *network.Network, chan *events.Event)

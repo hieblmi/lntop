@@ -8,10 +8,10 @@ import (
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 
-	"github.com/edouardparis/lntop/config"
-	netmodels "github.com/edouardparis/lntop/network/models"
-	"github.com/edouardparis/lntop/ui/color"
-	"github.com/edouardparis/lntop/ui/models"
+	"github.com/hieblmi/lntop/config"
+	netmodels "github.com/hieblmi/lntop/network/models"
+	"github.com/hieblmi/lntop/ui/color"
+	"github.com/hieblmi/lntop/ui/models"
 )
 
 const (
@@ -700,6 +700,56 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 					} else {
 						return color.White(opts...)(result)
 					}
+				},
+			}
+		case "INBOUND_BASE":
+			channels.columns[i] = channelsColumn{
+				width: 12,
+				name:  fmt.Sprintf("%-12s", columns[i]),
+				sort: func(order models.Order) models.ChannelsSort {
+					return func(c1, c2 *netmodels.Channel) bool {
+						var c1f int32
+						var c2f int32
+						if c1.LocalPolicy != nil {
+							c1f = c1.LocalPolicy.InboundFeeBaseMsat
+						}
+						if c2.LocalPolicy != nil {
+							c2f = c2.LocalPolicy.InboundFeeBaseMsat
+						}
+						return models.Int64Sort(int64(c1f), int64(c2f), order)
+					}
+				},
+				display: func(c *netmodels.Channel, opts ...color.Option) string {
+					var val int32
+					if c.LocalPolicy != nil {
+						val = c.LocalPolicy.InboundFeeBaseMsat
+					}
+					return color.White(opts...)(printer.Sprintf("%12d", val))
+				},
+			}
+		case "INBOUND_RATE":
+			channels.columns[i] = channelsColumn{
+				width: 12,
+				name:  fmt.Sprintf("%-12s", columns[i]),
+				sort: func(order models.Order) models.ChannelsSort {
+					return func(c1, c2 *netmodels.Channel) bool {
+						var c1f int32
+						var c2f int32
+						if c1.LocalPolicy != nil {
+							c1f = c1.LocalPolicy.InboundFeeRateMilliMsat
+						}
+						if c2.LocalPolicy != nil {
+							c2f = c2.LocalPolicy.InboundFeeRateMilliMsat
+						}
+						return models.Int64Sort(int64(c1f), int64(c2f), order)
+					}
+				},
+				display: func(c *netmodels.Channel, opts ...color.Option) string {
+					var val int32
+					if c.LocalPolicy != nil {
+						val = c.LocalPolicy.InboundFeeRateMilliMsat
+					}
+					return color.White(opts...)(printer.Sprintf("%12d", val))
 				},
 			}
 

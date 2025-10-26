@@ -5,8 +5,8 @@ import (
 	"regexp"
 
 	"github.com/awesome-gocui/gocui"
-	"github.com/edouardparis/lntop/ui/color"
-	"github.com/edouardparis/lntop/ui/models"
+	"github.com/hieblmi/lntop/ui/color"
+	"github.com/hieblmi/lntop/ui/models"
 )
 
 const (

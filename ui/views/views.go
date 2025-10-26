@@ -6,10 +6,10 @@ import (
 	"github.com/awesome-gocui/gocui"
 	"github.com/pkg/errors"
 
-	"github.com/edouardparis/lntop/config"
-	"github.com/edouardparis/lntop/ui/color"
-	"github.com/edouardparis/lntop/ui/cursor"
-	"github.com/edouardparis/lntop/ui/models"
+	"github.com/hieblmi/lntop/config"
+	"github.com/hieblmi/lntop/ui/color"
+	"github.com/hieblmi/lntop/ui/cursor"
+	"github.com/hieblmi/lntop/ui/models"
 )
 
 type View interface {
@@ -112,7 +112,7 @@ func New(cfg config.Views, m *models.Models) *Views {
 		Transactions: NewTransactions(cfg.Transactions, m.Transactions),
 		Transaction:  NewTransaction(m.Transactions),
 		Routing:      NewRouting(cfg.Routing, m.RoutingLog, m.Channels),
-		FwdingHist:   NewFwdingHist(cfg.FwdingHist, m.FwdingHist),
+		FwdingHist:   NewFwdingHist(cfg.FwdingHist, m.FwdingHist, m.Channels),
 		Received:     NewReceived(cfg.Received, m.Received),
 		Main:         main,
 	}

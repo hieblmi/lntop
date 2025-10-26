@@ -13,10 +13,10 @@ import (
 	"log"
 	"os"
 
-	"github.com/edouardparis/lntop/cli"
+	"github.com/hieblmi/lntop/cli"
 )
 
-const Version = "v0.4.0"
+const Version = "v0.4.1-inbound-fees"
 
 func main() {
 	err := cli.New(Version).Run(os.Args)

@@ -8,10 +8,10 @@ import (
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 
-	"github.com/edouardparis/lntop/config"
-	netmodels "github.com/edouardparis/lntop/network/models"
-	"github.com/edouardparis/lntop/ui/color"
-	"github.com/edouardparis/lntop/ui/models"
+	"github.com/hieblmi/lntop/config"
+	netmodels "github.com/hieblmi/lntop/network/models"
+	"github.com/hieblmi/lntop/ui/color"
+	"github.com/hieblmi/lntop/ui/models"
 )
 
 const (
@@ -466,6 +466,38 @@ func NewRouting(cfg *config.View, routingEvents *models.RoutingLog, channels *mo
 				name:  fmt.Sprintf("%-80s", columns[i]),
 				display: func(c *netmodels.RoutingEvent, opts ...color.Option) string {
 					return color.Cyan(opts...)(fmt.Sprintf("%-80s", c.FailureDetail))
+				},
+			}
+		case "INBOUND_BASE_IN":
+			routing.columns[i] = routingColumn{
+				width: 14,
+				name:  fmt.Sprintf("%-14s", columns[i]),
+				display: func(e *netmodels.RoutingEvent, opts ...color.Option) string {
+					if e.IncomingChannelId == 0 {
+						return fmt.Sprintf("%-14s", "")
+					}
+					for _, ch := range channels.List() {
+						if ch.ID == e.IncomingChannelId && ch.LocalPolicy != nil {
+							return color.White(opts...)(printer.Sprintf("%14d", ch.LocalPolicy.InboundFeeBaseMsat))
+						}
+					}
+					return fmt.Sprintf("%-14s", "")
+				},
+			}
+		case "INBOUND_RATE_IN":
+			routing.columns[i] = routingColumn{
+				width: 15,
+				name:  fmt.Sprintf("%-15s", columns[i]),
+				display: func(e *netmodels.RoutingEvent, opts ...color.Option) string {
+					if e.IncomingChannelId == 0 {
+						return fmt.Sprintf("%-15s", "")
+					}
+					for _, ch := range channels.List() {
+						if ch.ID == e.IncomingChannelId && ch.LocalPolicy != nil {
+							return color.White(opts...)(printer.Sprintf("%15d", ch.LocalPolicy.InboundFeeRateMilliMsat))
+						}
+					}
+					return fmt.Sprintf("%-15s", "")
 				},
 			}
 		default:

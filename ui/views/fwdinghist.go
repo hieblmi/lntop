@@ -8,10 +8,10 @@ import (
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 
-	"github.com/edouardparis/lntop/config"
-	netmodels "github.com/edouardparis/lntop/network/models"
-	"github.com/edouardparis/lntop/ui/color"
-	"github.com/edouardparis/lntop/ui/models"
+	"github.com/hieblmi/lntop/config"
+	netmodels "github.com/hieblmi/lntop/network/models"
+	"github.com/hieblmi/lntop/ui/color"
+	"github.com/hieblmi/lntop/ui/models"
 )
 
 const (
@@ -277,7 +277,7 @@ func (c *FwdingHist) display() {
 	}
 }
 
-func NewFwdingHist(cfg *config.View, hist *models.FwdingHist) *FwdingHist {
+func NewFwdingHist(cfg *config.View, hist *models.FwdingHist, channels *models.Channels) *FwdingHist {
 	fwdinghist := &FwdingHist{
 		cfg:        cfg,
 		fwdinghist: hist,
@@ -391,6 +391,68 @@ func NewFwdingHist(cfg *config.View, hist *models.FwdingHist) *FwdingHist {
 				width: 20,
 				display: func(e *netmodels.ForwardingEvent, opts ...color.Option) string {
 					return color.White(opts...)(fmt.Sprintf("%20s", e.EventTime.Format("15:04:05 Jan _2")))
+				},
+			}
+		case "INBOUND_BASE_IN":
+			fwdinghist.columns[i] = fwdinghistColumn{
+				width: 14,
+				name:  fmt.Sprintf("%-14s", columns[i]),
+				sort: func(order models.Order) models.FwdinghistSort {
+					return func(e1, e2 *netmodels.ForwardingEvent) bool {
+						var e1f int32
+						var e2f int32
+						for _, ch := range channels.List() {
+							if ch.ID == e1.ChanIdIn && ch.LocalPolicy != nil {
+								e1f = ch.LocalPolicy.InboundFeeBaseMsat
+							}
+							if ch.ID == e2.ChanIdIn && ch.LocalPolicy != nil {
+								e2f = ch.LocalPolicy.InboundFeeBaseMsat
+							}
+						}
+						return models.Int64Sort(int64(e1f), int64(e2f), order)
+					}
+				},
+				display: func(e *netmodels.ForwardingEvent, opts ...color.Option) string {
+					if e.ChanIdIn == 0 {
+						return fmt.Sprintf("%-14s", "")
+					}
+					for _, ch := range channels.List() {
+						if ch.ID == e.ChanIdIn && ch.LocalPolicy != nil {
+							return color.White(opts...)(printer.Sprintf("%14d", ch.LocalPolicy.InboundFeeBaseMsat))
+						}
+					}
+					return fmt.Sprintf("%-14s", "")
+				},
+			}
+		case "INBOUND_RATE_IN":
+			fwdinghist.columns[i] = fwdinghistColumn{
+				width: 15,
+				name:  fmt.Sprintf("%-15s", columns[i]),
+				sort: func(order models.Order) models.FwdinghistSort {
+					return func(e1, e2 *netmodels.ForwardingEvent) bool {
+						var e1f int32
+						var e2f int32
+						for _, ch := range channels.List() {
+							if ch.ID == e1.ChanIdIn && ch.LocalPolicy != nil {
+								e1f = ch.LocalPolicy.InboundFeeRateMilliMsat
+							}
+							if ch.ID == e2.ChanIdIn && ch.LocalPolicy != nil {
+								e2f = ch.LocalPolicy.InboundFeeRateMilliMsat
+							}
+						}
+						return models.Int64Sort(int64(e1f), int64(e2f), order)
+					}
+				},
+				display: func(e *netmodels.ForwardingEvent, opts ...color.Option) string {
+					if e.ChanIdIn == 0 {
+						return fmt.Sprintf("%-15s", "")
+					}
+					for _, ch := range channels.List() {
+						if ch.ID == e.ChanIdIn && ch.LocalPolicy != nil {
+							return color.White(opts...)(printer.Sprintf("%15d", ch.LocalPolicy.InboundFeeRateMilliMsat))
+						}
+					}
+					return fmt.Sprintf("%-15s", "")
 				},
 			}
 		default:
