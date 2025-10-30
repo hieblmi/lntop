@@ -5,11 +5,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/edouardparis/lntop/app"
-	"github.com/edouardparis/lntop/logging"
-	"github.com/edouardparis/lntop/network"
-	"github.com/edouardparis/lntop/network/models"
-	"github.com/edouardparis/lntop/network/options"
+	"github.com/hieblmi/lntop/app"
+	"github.com/hieblmi/lntop/logging"
+	"github.com/hieblmi/lntop/network"
+	"github.com/hieblmi/lntop/network/models"
+	"github.com/hieblmi/lntop/network/options"
 )
 
 type Models struct {

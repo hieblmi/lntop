@@ -1,4 +1,4 @@
-module github.com/edouardparis/lntop
+module github.com/hieblmi/lntop
 
 go 1.24.6
 

@@ -1,11 +1,11 @@
 package network
 
 import (
-	"github.com/edouardparis/lntop/config"
-	"github.com/edouardparis/lntop/logging"
-	"github.com/edouardparis/lntop/network/backend"
-	"github.com/edouardparis/lntop/network/backend/lnd"
-	"github.com/edouardparis/lntop/network/backend/mock"
+	"github.com/hieblmi/lntop/config"
+	"github.com/hieblmi/lntop/logging"
+	"github.com/hieblmi/lntop/network/backend"
+	"github.com/hieblmi/lntop/network/backend/lnd"
+	"github.com/hieblmi/lntop/network/backend/mock"
 )
 
 type Network struct {

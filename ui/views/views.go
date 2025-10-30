@@ -6,10 +6,10 @@ import (
 	"github.com/awesome-gocui/gocui"
 	"github.com/pkg/errors"
 
-	"github.com/edouardparis/lntop/config"
-	"github.com/edouardparis/lntop/ui/color"
-	"github.com/edouardparis/lntop/ui/cursor"
-	"github.com/edouardparis/lntop/ui/models"
+	"github.com/hieblmi/lntop/config"
+	"github.com/hieblmi/lntop/ui/color"
+	"github.com/hieblmi/lntop/ui/cursor"
+	"github.com/hieblmi/lntop/ui/models"
 )
 
 type View interface {

@@ -4,7 +4,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/edouardparis/lntop/network/models"
+	"github.com/hieblmi/lntop/network/models"
 )
 
 type ChannelsSort func(*models.Channel, *models.Channel) bool

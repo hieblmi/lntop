@@ -6,8 +6,8 @@ import (
 	"github.com/awesome-gocui/gocui"
 	"github.com/pkg/errors"
 
-	"github.com/edouardparis/lntop/app"
-	"github.com/edouardparis/lntop/events"
+	"github.com/hieblmi/lntop/app"
+	"github.com/hieblmi/lntop/events"
 )
 
 func Run(ctx context.Context, app *app.App, sub chan *events.Event) error {

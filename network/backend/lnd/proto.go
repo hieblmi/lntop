@@ -8,7 +8,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
 
-	"github.com/edouardparis/lntop/network/models"
+	"github.com/hieblmi/lntop/network/models"
 )
 
 func protoToWalletBalance(w *lnrpc.WalletBalanceResponse) *models.WalletBalance {

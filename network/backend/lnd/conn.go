@@ -13,7 +13,7 @@ import (
 	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/macaroons"
 
-	"github.com/edouardparis/lntop/config"
+	"github.com/hieblmi/lntop/config"
 )
 
 func newClientConn(c *config.Network) (*grpc.ClientConn, error) {

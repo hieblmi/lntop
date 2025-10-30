@@ -1,8 +1,8 @@
 # lntop
 
-[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/hieblmi/lntop/blob/master/LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/hieblmi/lntop)](https://goreportcard.com/report/github.com/hieblmi/lntop)
-[![Godoc](https://godoc.org/github.com/hieblmi/lntop?status.svg)](https://godoc.org/github.com/hieblmi/lntop)
+[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/hieblmi/lntop/master/LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/hieblmi/lntoptps://goreportcard.com/report/github.com/hieblhieblmi/lntop
+[![Godoc](https://godoc.org/github.com/hieblmi/lntopus.svg)](https://godoc.org/github.com/hieblhieblmi/lntop
 
 `lntop` is an interactive text-mode channels viewer for Unix systems.
 
@@ -14,10 +14,10 @@
 Require the [go programming language](https://golang.org/) (version >= 1.19.1)
 
 **Raspberry Pi users: be aware that Raspbian ships with Go 1.11** ( see
-[#30](https://github.com/hieblmi/lntop/issues/30) )
+[#30](https://github.com/hieblmi/lntopes/30) )
 
 ```
-git clone https://github.com/hieblmi/lntop.git
+git clone https://github.com/hieblmi/lntop
 cd lntop
 go build   // creates a binary `lntop` in directory
 go install // creates a binary and move it in your $GOBIN path
@@ -27,7 +27,7 @@ go install // creates a binary and move it in your $GOBIN path
 With Go version >= 1.16, you can use [`go-install`](https://golang.org/ref/mod#go-install)
 
 ```
-go install github.com/hieblmi/lntop@latest
+go install github.com/hieblmi/lntopst
 ```
 
 Note: If you are using [**Umbrel**](https://getumbrel.com) or [**Citadel**](https://runcitadel.space) you can simply install the [**Lightning Shell**](https://lightningshell.app) app from the respective dashboard. This will give you `lntop` which should just work without any additional configuration.

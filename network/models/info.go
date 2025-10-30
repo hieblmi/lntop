@@ -1,6 +1,6 @@
 package models
 
-import "github.com/edouardparis/lntop/logging"
+import "github.com/hieblmi/lntop/logging"
 
 type Info struct {
 	PubKey              string
