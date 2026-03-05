@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/edouardparis/lntop/logging"
+	"github.com/hieblmi/lntop/logging"
 	"github.com/mattn/go-runewidth"
 )
 

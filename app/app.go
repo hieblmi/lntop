@@ -1,9 +1,9 @@
 package app
 
 import (
-	"github.com/edouardparis/lntop/config"
-	"github.com/edouardparis/lntop/logging"
-	"github.com/edouardparis/lntop/network"
+	"github.com/hieblmi/lntop/config"
+	"github.com/hieblmi/lntop/logging"
+	"github.com/hieblmi/lntop/network"
 )
 
 type App struct {

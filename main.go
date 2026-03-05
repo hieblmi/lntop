@@ -13,7 +13,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/edouardparis/lntop/cli"
+	"github.com/hieblmi/lntop/cli"
 )
 
 const Version = "v0.4.0"

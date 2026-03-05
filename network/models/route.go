@@ -1,6 +1,6 @@
 package models
 
-import "github.com/edouardparis/lntop/logging"
+import "github.com/hieblmi/lntop/logging"
 
 type Route struct {
 	// TimeLock: The cumulative (final) time lock across the entire route.

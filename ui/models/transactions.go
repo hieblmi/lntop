@@ -5,7 +5,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/edouardparis/lntop/network/models"
+	"github.com/hieblmi/lntop/network/models"
 )
 
 type TransactionsSort func(*models.Transaction, *models.Transaction) bool

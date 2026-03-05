@@ -5,7 +5,7 @@ RUN apk add --no-cache --update git gcc musl-dev
 
 ARG LNTOP_SRC_PATH
 
-WORKDIR $GOPATH/src/github.com/edouardparis/lntop
+WORKDIR $GOPATH/src/github.com/hieblmi/lntop
 COPY "$LNTOP_SRC_PATH" .
 
 ENV GO111MODULE=on

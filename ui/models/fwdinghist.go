@@ -4,7 +4,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/edouardparis/lntop/network/models"
+	"github.com/hieblmi/lntop/network/models"
 )
 
 type FwdinghistSort func(*models.ForwardingEvent, *models.ForwardingEvent) bool
