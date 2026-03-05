@@ -28,7 +28,13 @@ func (c *controller) layout(g *gocui.Gui) error {
 func (c *controller) cursorDown(g *gocui.Gui, v *gocui.View) error {
 	view := c.views.Get(v)
 	if view != nil {
-		return cursor.Down(view)
+		if err := cursor.Down(view); err != nil {
+			return err
+		}
+		// When navigating the menu, immediately switch the main view.
+		if view.Name() == views.MENU {
+			return c.switchToMenuSelection(g)
+		}
 	}
 	return nil
 }
@@ -36,7 +42,13 @@ func (c *controller) cursorDown(g *gocui.Gui, v *gocui.View) error {
 func (c *controller) cursorUp(g *gocui.Gui, v *gocui.View) error {
 	view := c.views.Get(v)
 	if view != nil {
-		return cursor.Up(view)
+		if err := cursor.Up(view); err != nil {
+			return err
+		}
+		// When navigating the menu, immediately switch the main view.
+		if view.Name() == views.MENU {
+			return c.switchToMenuSelection(g)
+		}
 	}
 	return nil
 }
@@ -212,6 +224,11 @@ func (c *controller) Menu(g *gocui.Gui, v *gocui.View) error {
 		return err
 	}
 
+	return c.closeMenu(g)
+}
+
+// closeMenu closes the menu sidebar and focuses the main view.
+func (c *controller) closeMenu(g *gocui.Gui) error {
 	err := c.views.Menu.Delete(g)
 	if err != nil {
 		return err
@@ -222,6 +239,40 @@ func (c *controller) Menu(g *gocui.Gui, v *gocui.View) error {
 		return err
 	}
 
+	return nil
+}
+
+// switchToMenuSelection switches the main view to match the current
+// menu selection without closing the menu.
+func (c *controller) switchToMenuSelection(g *gocui.Gui) error {
+	maxX, maxY := g.Size()
+	current := c.views.Menu.Current()
+	if c.views.Main.Name() == current {
+		return nil
+	}
+
+	var next views.View
+	switch current {
+	case views.TRANSACTIONS:
+		next = c.views.Transactions
+	case views.CHANNELS:
+		next = c.views.Channels
+	case views.ROUTING:
+		next = c.views.Routing
+	case views.FWDINGHIST:
+		next = c.views.FwdingHist
+	case views.RECEIVED:
+		next = c.views.Received
+	}
+	if next != nil {
+		if err := c.views.Main.Delete(g); err != nil {
+			return err
+		}
+		c.views.Main = next
+		if err := next.Set(g, 11, 6, maxX-1, maxY); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -250,7 +301,6 @@ func (c *controller) OnEnter(g *gocui.Gui, v *gocui.View) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
 	defer cancel()
 
-	maxX, maxY := g.Size()
 	view := c.views.Get(v)
 	if view == nil {
 		return nil
@@ -269,33 +319,7 @@ func (c *controller) OnEnter(g *gocui.Gui, v *gocui.View) error {
 		return ToggleView(g, view, c.views.Channels)
 
 	case views.MENU:
-		current := c.views.Menu.Current()
-		if c.views.Main.Name() == current {
-			return nil
-		}
-
-		var next views.View
-		switch current {
-		case views.TRANSACTIONS:
-			next = c.views.Transactions
-		case views.CHANNELS:
-			next = c.views.Channels
-		case views.ROUTING:
-			next = c.views.Routing
-		case views.FWDINGHIST:
-			next = c.views.FwdingHist
-		case views.RECEIVED:
-			next = c.views.Received
-		}
-		if next != nil {
-			if err := c.views.Main.Delete(g); err != nil {
-				return err
-			}
-			c.views.Main = next
-			if err := next.Set(g, 11, 6, maxX-1, maxY); err != nil {
-				return err
-			}
-		}
+		return c.closeMenu(g)
 
 	case views.TRANSACTIONS:
 		index := c.views.Transactions.Index()
