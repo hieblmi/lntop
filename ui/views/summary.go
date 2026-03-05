@@ -3,8 +3,9 @@ package views
 import (
 	"bytes"
 	"fmt"
+	"strings"
 
-	"github.com/awesome-gocui/gocui"
+	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 
@@ -13,58 +14,65 @@ import (
 	"github.com/hieblmi/lntop/ui/models"
 )
 
-const (
-	SUMMARY_LEFT  = "summary_left"
-	SUMMARY_RIGHT = "summary_right"
+// Panel styles with rounded borders.
+var (
+	channelsPanelStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("#5b37b7")).
+				Padding(0, 1)
+
+	walletPanelStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("#2563eb")).
+				Padding(0, 1)
+
+	panelTitleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#a78bfa"))
+
+	panelLabelStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#6366f1"))
 )
 
 type Summary struct {
-	left            *gocui.View
-	right           *gocui.View
 	info            *models.Info
 	channelsBalance *models.ChannelsBalance
 	walletBalance   *models.WalletBalance
 	channels        *models.Channels
 }
 
-func (s *Summary) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
-	var err error
-	s.left, err = g.SetView(SUMMARY_LEFT, x0, y0, x1/2, y1, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
+func (s *Summary) Render(width int) string {
+	if s.info.Info == nil || s.channelsBalance.ChannelsBalance == nil || s.walletBalance.WalletBalance == nil {
+		return ""
 	}
-	s.left.Frame = false
-	s.left.Wrap = true
 
-	s.right, err = g.SetView(SUMMARY_RIGHT, x1/2, y0, x1, y1, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-	}
-	s.right.Frame = false
-	s.right.Wrap = true
-	s.display()
-	return nil
-}
-
-func (s *Summary) display() {
-	s.left.Clear()
 	p := message.NewPrinter(language.English)
 	green := color.Green()
 	yellow := color.Yellow()
-	cyan := color.Cyan()
 	red := color.Red()
-	_, _ = fmt.Fprintln(s.left, green("[ Channels ]"))
-	_, _ = fmt.Fprintln(s.left, p.Sprintf("%s %s (%s|%s)",
-		cyan("balance:"),
+
+	label := panelLabelStyle.Render
+
+	// Border takes 2 chars each side + 1 padding each side = 6 chars per panel.
+	borderOverhead := 6
+	half := width / 2
+	innerWidth := half - borderOverhead
+	if innerWidth < 20 {
+		innerWidth = 20
+	}
+
+	// Left panel: channels.
+	var left strings.Builder
+	left.WriteString(panelTitleStyle.Render("Channels"))
+	left.WriteString("\n")
+	left.WriteString(p.Sprintf("%s %s (%s|%s)",
+		label("balance:"),
 		formatAmount(s.channelsBalance.Balance+s.channelsBalance.PendingOpenBalance),
 		green(p.Sprintf("%s", formatAmount(s.channelsBalance.Balance))),
 		yellow(p.Sprintf("%s", formatAmount(s.channelsBalance.PendingOpenBalance))),
 	))
-	// Count channels with disabled routing policies.
+	left.WriteString("\n")
+
 	disabledLocal, disabledRemote := 0, 0
 	for _, ch := range s.channels.List() {
 		if ch.LocalPolicy != nil && ch.LocalPolicy.Disabled {
@@ -74,55 +82,74 @@ func (s *Summary) display() {
 			disabledRemote++
 		}
 	}
-	_, _ = fmt.Fprintf(s.left, "%s %d %s %d %s %d %s\n",
-		cyan("state  :"),
+	left.WriteString(fmt.Sprintf("%s %d %s %d %s %d %s",
+		label("state  :"),
 		s.info.NumActiveChannels, green("on"),
 		s.info.NumPendingChannels, yellow("pending"),
 		s.info.NumInactiveChannels, red("off"),
-	)
+	))
+	left.WriteString("\n")
 	if disabledLocal > 0 || disabledRemote > 0 {
-		_, _ = fmt.Fprintf(s.left, "%s %d %s %d %s\n",
-			cyan("disabled:"),
-			disabledLocal, red("local⇈"),
-			disabledRemote, red("remote⇊"),
-		)
+		left.WriteString(fmt.Sprintf("%s %d %s %d %s",
+			label("disabled:"),
+			disabledLocal, red("local\u21c8"),
+			disabledRemote, red("remote\u21ca"),
+		))
+		left.WriteString("\n")
 	}
-	_, _ = fmt.Fprintf(s.left, "%s %s\n",
-		cyan("gauge  :"),
+	left.WriteString(fmt.Sprintf("%s %s",
+		label("gauge  :"),
 		gaugeTotal(s.channelsBalance.Balance, s.channels.List()),
-	)
+	))
 
-	s.right.Clear()
-	_, _ = fmt.Fprintln(s.right, green("[ Wallet ]"))
-	_, _ = fmt.Fprintln(s.right, p.Sprintf("%s %s (%s|%s)",
-		cyan("balance:"),
+	// Right panel: wallet.
+	var right strings.Builder
+	right.WriteString(panelTitleStyle.Render("Wallet"))
+	right.WriteString("\n")
+	right.WriteString(p.Sprintf("%s %s (%s|%s)",
+		label("balance:"),
 		formatAmount(s.walletBalance.TotalBalance),
 		green(p.Sprintf("%s", formatAmount(s.walletBalance.ConfirmedBalance))),
 		yellow(p.Sprintf("%s", formatAmount(s.walletBalance.UnconfirmedBalance))),
 	))
+
+	leftStr := channelsPanelStyle.Width(innerWidth).Render(left.String())
+	rightStr := walletPanelStyle.Width(innerWidth).Render(right.String())
+	return lipgloss.JoinHorizontal(lipgloss.Top, leftStr, rightStr)
 }
 
+// gaugeTotal renders a gradient-colored balance gauge.
 func gaugeTotal(balance int64, channels []*netmodels.Channel) string {
 	capacity := int64(0)
 	for i := range channels {
 		capacity += channels[i].Capacity
 	}
-
 	if capacity == 0 {
 		return fmt.Sprintf("[%20s]  0%%", "")
 	}
 
-	index := int(balance * int64(20) / capacity)
+	pct := float64(balance) / float64(capacity)
+	filled := int(pct * 20)
 	var buffer bytes.Buffer
-	cyan := color.Cyan()
+
 	for i := 0; i < 20; i++ {
-		if i < index {
-			buffer.WriteString(cyan("|"))
-			continue
+		if i < filled {
+			// Gradient from green (low) through yellow to red (high local balance).
+			ratio := float64(i) / 20.0
+			var c lipgloss.Color
+			if ratio < 0.5 {
+				c = lipgloss.Color("#22c55e") // green
+			} else if ratio < 0.75 {
+				c = lipgloss.Color("#eab308") // yellow
+			} else {
+				c = lipgloss.Color("#ef4444") // red
+			}
+			buffer.WriteString(lipgloss.NewStyle().Foreground(c).Render("\u2588"))
+		} else {
+			buffer.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#333333")).Render("\u2591"))
 		}
-		buffer.WriteString(" ")
 	}
-	return fmt.Sprintf("[%s] %2d%%", buffer.String(), balance*100/capacity)
+	return fmt.Sprintf("%s %2d%%", buffer.String(), balance*100/capacity)
 }
 
 func NewSummary(info *models.Info,
