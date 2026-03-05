@@ -278,7 +278,7 @@ func (c *FwdingHist) display() {
 	}
 }
 
-func NewFwdingHist(cfg *config.View, hist *models.FwdingHist) *FwdingHist {
+func NewFwdingHist(cfg *config.View, hist *models.FwdingHist, channels *models.Channels) *FwdingHist {
 	fwdinghist := &FwdingHist{
 		cfg:        cfg,
 		fwdinghist: hist,
@@ -386,6 +386,42 @@ func NewFwdingHist(cfg *config.View, hist *models.FwdingHist) *FwdingHist {
 					return fee(e.Fee)
 				},
 			}
+		case "INBOUND_BASE_IN":
+			fwdinghist.columns[i] = fwdinghistColumn{
+				width: 14,
+				name:  fmt.Sprintf("%14s", columns[i]),
+				sort: func(order models.Order) models.FwdinghistSort {
+					return func(e1, e2 *netmodels.ForwardingEvent) bool {
+						return models.Int32Sort(
+							fwdInboundFee(channels, e1.ChanIdIn, func(p *netmodels.RoutingPolicy) int32 { return p.InboundFeeBaseMsat }),
+							fwdInboundFee(channels, e2.ChanIdIn, func(p *netmodels.RoutingPolicy) int32 { return p.InboundFeeBaseMsat }),
+							order,
+						)
+					}
+				},
+				display: func(e *netmodels.ForwardingEvent, opts ...color.Option) string {
+					val := fwdInboundFee(channels, e.ChanIdIn, func(p *netmodels.RoutingPolicy) int32 { return p.InboundFeeBaseMsat })
+					return color.White(opts...)(fmt.Sprintf("%14d", val))
+				},
+			}
+		case "INBOUND_RATE_IN":
+			fwdinghist.columns[i] = fwdinghistColumn{
+				width: 14,
+				name:  fmt.Sprintf("%14s", columns[i]),
+				sort: func(order models.Order) models.FwdinghistSort {
+					return func(e1, e2 *netmodels.ForwardingEvent) bool {
+						return models.Int32Sort(
+							fwdInboundFee(channels, e1.ChanIdIn, func(p *netmodels.RoutingPolicy) int32 { return p.InboundFeeRateMilliMsat }),
+							fwdInboundFee(channels, e2.ChanIdIn, func(p *netmodels.RoutingPolicy) int32 { return p.InboundFeeRateMilliMsat }),
+							order,
+						)
+					}
+				},
+				display: func(e *netmodels.ForwardingEvent, opts ...color.Option) string {
+					val := fwdInboundFee(channels, e.ChanIdIn, func(p *netmodels.RoutingPolicy) int32 { return p.InboundFeeRateMilliMsat })
+					return color.White(opts...)(fmt.Sprintf("%14d", val))
+				},
+			}
 		case "TIMESTAMP_NS":
 			fwdinghist.columns[i] = fwdinghistColumn{
 				name:  fmt.Sprintf("%15s", "TIME"),
@@ -406,6 +442,16 @@ func NewFwdingHist(cfg *config.View, hist *models.FwdingHist) *FwdingHist {
 
 	}
 	return fwdinghist
+}
+
+// fwdInboundFee looks up the inbound fee for a channel by ID.
+func fwdInboundFee(channels *models.Channels, chanID uint64, extract func(*netmodels.RoutingPolicy) int32) int32 {
+	for _, ch := range channels.List() {
+		if ch.ID == chanID && ch.LocalPolicy != nil {
+			return extract(ch.LocalPolicy)
+		}
+	}
+	return 0
 }
 
 func fee(fee uint64, opts ...color.Option) string {

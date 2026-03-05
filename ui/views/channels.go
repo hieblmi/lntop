@@ -683,6 +683,54 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 					return color.White(opts...)(printer.Sprintf("%7d", val))
 				},
 			}
+		case "INBOUND_BASE":
+			channels.columns[i] = channelsColumn{
+				width: 12,
+				name:  fmt.Sprintf("%12s", columns[i]),
+				sort: func(order models.Order) models.ChannelsSort {
+					return func(c1, c2 *netmodels.Channel) bool {
+						var c1f, c2f int32
+						if c1.LocalPolicy != nil {
+							c1f = c1.LocalPolicy.InboundFeeBaseMsat
+						}
+						if c2.LocalPolicy != nil {
+							c2f = c2.LocalPolicy.InboundFeeBaseMsat
+						}
+						return models.Int32Sort(c1f, c2f, order)
+					}
+				},
+				display: func(c *netmodels.Channel, opts ...color.Option) string {
+					var val int32
+					if c.LocalPolicy != nil {
+						val = c.LocalPolicy.InboundFeeBaseMsat
+					}
+					return color.White(opts...)(printer.Sprintf("%12d", val))
+				},
+			}
+		case "INBOUND_RATE":
+			channels.columns[i] = channelsColumn{
+				width: 12,
+				name:  fmt.Sprintf("%12s", columns[i]),
+				sort: func(order models.Order) models.ChannelsSort {
+					return func(c1, c2 *netmodels.Channel) bool {
+						var c1f, c2f int32
+						if c1.LocalPolicy != nil {
+							c1f = c1.LocalPolicy.InboundFeeRateMilliMsat
+						}
+						if c2.LocalPolicy != nil {
+							c2f = c2.LocalPolicy.InboundFeeRateMilliMsat
+						}
+						return models.Int32Sort(c1f, c2f, order)
+					}
+				},
+				display: func(c *netmodels.Channel, opts ...color.Option) string {
+					var val int32
+					if c.LocalPolicy != nil {
+						val = c.LocalPolicy.InboundFeeRateMilliMsat
+					}
+					return color.White(opts...)(printer.Sprintf("%12d", val))
+				},
+			}
 		case "AGE":
 			channels.columns[i] = channelsColumn{
 				width: 10,
