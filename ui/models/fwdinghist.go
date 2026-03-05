@@ -34,10 +34,6 @@ func (t *FwdingHist) Len() int {
 	return len(t.list)
 }
 
-func (t *FwdingHist) Clear() {
-	t.list = []*models.ForwardingEvent{}
-}
-
 func (t *FwdingHist) Swap(i, j int) {
 	t.list[i], t.list[j] = t.list[j], t.list[i]
 }
@@ -65,8 +61,5 @@ func (t *FwdingHist) Get(index int) *models.ForwardingEvent {
 func (t *FwdingHist) Update(events []*models.ForwardingEvent) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.Clear()
-	for _, event := range events {
-		t.list = append(t.list, event)
-	}
+	t.list = events
 }

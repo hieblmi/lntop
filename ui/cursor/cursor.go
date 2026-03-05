@@ -94,8 +94,8 @@ func Home(v View) error {
 	}
 	ox, _ := v.Origin()
 	cx, _ := v.Cursor()
-	v.SetCursor(cx, 0)
-	v.SetOrigin(ox, 0)
+	_ = v.SetCursor(cx, 0)
+	_ = v.SetOrigin(ox, 0)
 	return nil
 }
 
@@ -112,8 +112,8 @@ func End(v View) error {
 	}
 	ox, _ := v.Origin()
 	cx, _ := v.Cursor()
-	v.SetCursor(cx, ps-1)
-	v.SetOrigin(ox, fs-ps)
+	_ = v.SetCursor(cx, ps-1)
+	_ = v.SetOrigin(ox, fs-ps)
 	return nil
 }
 
@@ -135,11 +135,11 @@ func PageDown(v View) error {
 		ny = fs - 1
 	}
 	if ny >= fs-ps {
-		v.SetOrigin(ox, fs-ps)
-		v.SetCursor(cx, ny-fs+ps)
+		_ = v.SetOrigin(ox, fs-ps)
+		_ = v.SetCursor(cx, ny-fs+ps)
 	} else {
-		v.SetOrigin(ox, ny-ps)
-		v.SetCursor(cx, ps-1)
+		_ = v.SetOrigin(ox, ny-ps)
+		_ = v.SetCursor(cx, ps-1)
 	}
 	return nil
 }
@@ -156,11 +156,11 @@ func PageUp(v View) error {
 		ny = 0
 	}
 	if ny <= ps {
-		v.SetOrigin(ox, 0)
-		v.SetCursor(cx, ny)
+		_ = v.SetOrigin(ox, 0)
+		_ = v.SetCursor(cx, ny)
 	} else {
-		v.SetOrigin(ox, ny)
-		v.SetCursor(cx, 0)
+		_ = v.SetOrigin(ox, ny)
+		_ = v.SetCursor(cx, 0)
 	}
 	return nil
 }

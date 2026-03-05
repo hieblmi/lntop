@@ -2,22 +2,21 @@ package lnd
 
 import (
 	"crypto/tls"
-	"io/ioutil"
-	"net/url"
+	"os"
+	"strings"
 
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	macaroon "gopkg.in/macaroon.v2"
 
-	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/macaroons"
 
 	"github.com/edouardparis/lntop/config"
 )
 
 func newClientConn(c *config.Network) (*grpc.ClientConn, error) {
-	macaroonBytes, err := ioutil.ReadFile(c.Macaroon)
+	macaroonBytes, err := os.ReadFile(c.Macaroon)
 	if err != nil {
 		return nil, err
 	}
@@ -48,11 +47,6 @@ func newClientConn(c *config.Network) (*grpc.ClientConn, error) {
 		cred = credentials.NewTLS(&tls.Config{})
 	}
 
-	u, err := url.Parse(c.Address)
-	if err != nil {
-		return nil, err
-	}
-
 	macaroon, err := macaroons.NewMacaroonCredential(constrainedMac)
 	if err != nil {
 		return nil, err
@@ -61,11 +55,13 @@ func newClientConn(c *config.Network) (*grpc.ClientConn, error) {
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(cred),
 		grpc.WithPerRPCCredentials(macaroon),
-		grpc.WithContextDialer(lncfg.ClientAddressDialer(u.Port())),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(c.MaxMsgRecvSize)),
 	}
 
-	conn, err := grpc.Dial(u.Hostname(), opts...)
+	// Strip legacy "//" prefix that was used with the old grpc.Dial API.
+	address := strings.TrimPrefix(c.Address, "//")
+
+	conn, err := grpc.NewClient(address, opts...)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}

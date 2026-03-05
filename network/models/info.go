@@ -14,7 +14,7 @@ type Info struct {
 	Synced              bool
 	Version             string
 	Chains              []string
-	Testnet             bool
+	Network             string
 }
 
 func (i Info) MarshalLogObject(enc logging.ObjectEncoder) error {

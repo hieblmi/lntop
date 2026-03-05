@@ -17,7 +17,7 @@ dest = "%[2]s"
 [network]
 name = "%[3]s"
 type = "%[4]s"
-address = "%[5]s"
+address = "%[5]s" # host:port format, e.g. "localhost:10009"
 cert = "%[6]s"
 macaroon = "%[7]s"
 macaroon_timeout = %[8]d
@@ -31,11 +31,11 @@ pool_capacity = %[11]d
 # It is possible to add, remove and order columns of the
 # table with the array columns. The available values are:
 columns = [
-	"STATUS",      # status of the channel
-	"ALIAS",       # alias of the channel node
+	"STATUS",      # status of the channel (on/off + disabled arrows)
+	"ALIAS",       # alias of the channel node (truncated to 15 chars)
 	"GAUGE",       # ascii bar with percent local/capacity
 	"LOCAL",       # the local amount of the channel
-	# "REMOTE",    # the remote amount of the channel
+	"REMOTE",      # the remote amount of the channel
 	"CAP",         # the total capacity of the channel
 	"SENT",        # the total amount sent
 	"RECEIVED",    # the total amount received
@@ -43,7 +43,7 @@ columns = [
 	"UNSETTLED",   # the amount unsettled in the channel
 	"CFEE",        # the commit fee
 	"LAST UPDATE", # last update of the channel
-	# "AGE",       # approximate channel age
+	"AGE",         # approximate channel age
 	"PRIVATE",     # true if channel is private
 	"ID",          # the id of the channel
 	# "SCID",      # short channel id (BxTxO formatted)
@@ -115,7 +115,7 @@ func NewDefault() *Config {
 	usr, _ := user.Current()
 	lndAddress, present := os.LookupEnv("LND_ADDRESS")
 	if !present {
-		lndAddress = "//127.0.0.1:10009"
+		lndAddress = "127.0.0.1:10009"
 	}
 	certPath, present := os.LookupEnv("CERT_PATH")
 	if !present {

@@ -124,7 +124,7 @@ func (h Menu) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
 	header.FgColor = gocui.ColorBlack
 
 	header.Rewind()
-	fmt.Fprintln(header, " MENU")
+	_, _ = fmt.Fprintln(header, " MENU")
 
 	h.view, err = g.SetView(MENU, x0-1, y0+1, x1, y1-2, 0)
 	if err != nil {
@@ -141,7 +141,7 @@ func (h Menu) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
 
 	h.view.Rewind()
 	for i := range menu {
-		fmt.Fprintln(h.view, fmt.Sprintf(" %-9s", menu[i]))
+		_, _ = fmt.Fprintf(h.view, " %-9s\n", menu[i])
 	}
 	_, err = g.SetCurrentView(MENU)
 	if err != nil {
@@ -173,9 +173,9 @@ func (h Menu) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
 	footer.FgColor = gocui.ColorBlack
 	footer.Rewind()
 	blackBg := color.Black(color.Background)
-	fmt.Fprintln(footer, fmt.Sprintf("%s%s",
+	_, _ = fmt.Fprintf(footer, "%s%s\n",
 		blackBg("F2"), "Close",
-	))
+	)
 	return nil
 }
 

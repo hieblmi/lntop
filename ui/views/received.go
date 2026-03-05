@@ -180,10 +180,11 @@ func (c *Received) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
 	footer.FgColor = gocui.ColorBlack
 	footer.Rewind()
 	blackBg := color.Black(color.Background)
-	fmt.Fprintln(footer, fmt.Sprintf("%s%s %s%s",
+	_, _ = fmt.Fprintf(footer, "%s%s %s%s  Invoices: %d\n",
 		blackBg("F2"), "Menu",
 		blackBg("F10"), "Quit",
-	))
+		c.received.Len(),
+	)
 	return nil
 }
 
@@ -204,7 +205,7 @@ func (c *Received) display() {
 		buffer.WriteString(c.columns[i].name)
 		buffer.WriteString(" ")
 	}
-	fmt.Fprintln(c.columnHeadersView, buffer.String())
+	_, _ = fmt.Fprintln(c.columnHeadersView, buffer.String())
 
 	c.view.Rewind()
 	for _, inv := range c.received.List() {
@@ -217,7 +218,7 @@ func (c *Received) display() {
 			b.WriteString(c.columns[i].display(inv, opt))
 			b.WriteString(" ")
 		}
-		fmt.Fprintln(c.view, b.String())
+		_, _ = fmt.Fprintln(c.view, b.String())
 	}
 }
 
@@ -341,13 +342,11 @@ func NewReceived(cfg *config.View, rec *models.Received) *Received {
 			}
 		}
 	}
-	// Default sort by TIME descending so latest invoices show first
+	// Default sort by TIME descending so latest invoices show first.
+	// Do not mark the column as sorted so it renders like other tabs.
 	if timeColIndex >= 0 {
 		if cmp := received.columns[timeColIndex].sort; cmp != nil {
 			rec.Sort(cmp(models.Desc))
-			for i := range received.columns {
-				received.columns[i].sorted = (i == timeColIndex)
-			}
 		}
 	}
 	return received

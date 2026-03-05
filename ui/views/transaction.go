@@ -72,7 +72,7 @@ func (c *Transaction) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
 	header.BgColor = gocui.ColorGreen
 	header.FgColor = gocui.ColorBlack | gocui.AttrBold
 	header.Rewind()
-	fmt.Fprintln(header, "Transaction")
+	_, _ = fmt.Fprintln(header, "Transaction")
 
 	v, err := g.SetView(TRANSACTION, x0-1, y0+1, x1+2, y1-1, 0)
 	if err != nil {
@@ -95,11 +95,11 @@ func (c *Transaction) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
 	footer.FgColor = gocui.ColorBlack
 	footer.Rewind()
 	blackBg := color.Black(color.Background)
-	fmt.Fprintln(footer, fmt.Sprintf("%s%s %s%s %s%s",
+	_, _ = fmt.Fprintf(footer, "%s%s %s%s %s%s\n",
 		blackBg("F2"), "Menu",
 		blackBg("Enter"), "Transactions",
 		blackBg("F10"), "Quit",
-	))
+	)
 	return nil
 }
 
@@ -124,26 +124,26 @@ func (c *Transaction) display() {
 	transaction := c.transactions.Current()
 	green := color.Green()
 	cyan := color.Cyan()
-	fmt.Fprintln(v, green(" [ Transaction ]"))
-	fmt.Fprintln(v, fmt.Sprintf("%s %s",
-		cyan("           Date:"), transaction.Date.Format("15:04:05 Jan _2")))
-	fmt.Fprintln(v, p.Sprintf("%s %d",
+	_, _ = fmt.Fprintln(v, green(" [ Transaction ]"))
+	_, _ = fmt.Fprintf(v, "%s %s\n",
+		cyan("           Date:"), transaction.Date.Format("15:04:05 Jan _2"))
+	_, _ = fmt.Fprintln(v, p.Sprintf("%s %d",
 		cyan("         Amount:"), transaction.Amount))
-	fmt.Fprintln(v, p.Sprintf("%s %d",
+	_, _ = fmt.Fprintln(v, p.Sprintf("%s %d",
 		cyan("            Fee:"), transaction.TotalFees))
-	fmt.Fprintln(v, p.Sprintf("%s %d",
+	_, _ = fmt.Fprintln(v, p.Sprintf("%s %d",
 		cyan("    BlockHeight:"), transaction.BlockHeight))
-	fmt.Fprintln(v, p.Sprintf("%s %d",
+	_, _ = fmt.Fprintln(v, p.Sprintf("%s %d",
 		cyan("NumConfirmations:"), transaction.NumConfirmations))
-	fmt.Fprintln(v, p.Sprintf("%s %s",
+	_, _ = fmt.Fprintln(v, p.Sprintf("%s %s",
 		cyan("       BlockHash:"), transaction.BlockHash))
-	fmt.Fprintln(v, fmt.Sprintf("%s %s",
-		cyan("         TxHash:"), transaction.TxHash))
-	fmt.Fprintln(v, "")
-	fmt.Fprintln(v, green("[ addresses ]"))
+	_, _ = fmt.Fprintf(v, "%s %s\n",
+		cyan("         TxHash:"), transaction.TxHash)
+	_, _ = fmt.Fprintln(v, "")
+	_, _ = fmt.Fprintln(v, green("[ addresses ]"))
 	for i := range transaction.DestAddresses {
-		fmt.Fprintln(v, fmt.Sprintf("%s %s",
-			cyan("               -"), transaction.DestAddresses[i]))
+		_, _ = fmt.Fprintf(v, "%s %s\n",
+			cyan("               -"), transaction.DestAddresses[i])
 	}
 
 }

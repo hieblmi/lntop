@@ -25,6 +25,7 @@ var DefaultChannelsColumns = []string{
 	"ALIAS",
 	"GAUGE",
 	"LOCAL",
+	"REMOTE",
 	"CAP",
 	"SENT",
 	"RECEIVED",
@@ -32,6 +33,7 @@ var DefaultChannelsColumns = []string{
 	"UNSETTLED",
 	"CFEE",
 	"LAST UPDATE",
+	"AGE",
 	"PRIVATE",
 	"ID",
 }
@@ -259,11 +261,11 @@ func (c *Channels) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
 	footer.FgColor = gocui.ColorBlack
 	footer.Rewind()
 	blackBg := color.Black(color.Background)
-	fmt.Fprintln(footer, fmt.Sprintf("%s%s %s%s %s%s",
+	_, _ = fmt.Fprintf(footer, "%s%s %s%s %s%s\n",
 		blackBg("F2"), "Menu",
 		blackBg("Enter"), "Channel",
 		blackBg("F10"), "Quit",
-	))
+	)
 	return nil
 }
 
@@ -284,7 +286,7 @@ func (c *Channels) display(g *gocui.Gui) {
 		buffer.WriteString(c.columns[i].name)
 		buffer.WriteString(" ")
 	}
-	fmt.Fprintln(c.columnHeadersView, buffer.String())
+	_, _ = fmt.Fprintln(c.columnHeadersView, buffer.String())
 
 	if len(c.columnViews) == 0 {
 		c.columnViews = make([]*gocui.View, len(c.columns))
@@ -314,7 +316,7 @@ func (c *Channels) display(g *gocui.Gui) {
 			if ci == 0 {
 				cc.Rewind()
 			}
-			fmt.Fprintln(cc, c.columns[i].display(item, opt), " ")
+			_, _ = fmt.Fprintln(cc, c.columns[i].display(item, opt), " ")
 			x0 += width + 1
 		}
 	}
@@ -339,8 +341,8 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 		switch columns[i] {
 		case "STATUS":
 			channels.columns[i] = channelsColumn{
-				width: 13,
-				name:  fmt.Sprintf("%-13s", columns[i]),
+				width: 8,
+				name:  fmt.Sprintf("%-8s", columns[i]),
 				sort: func(order models.Order) models.ChannelsSort {
 					return func(c1, c2 *netmodels.Channel) bool {
 						// status meanings are kinda the opposite of their numerical value
@@ -351,8 +353,8 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 			}
 		case "ALIAS":
 			channels.columns[i] = channelsColumn{
-				width: 25,
-				name:  fmt.Sprintf("%-25s", columns[i]),
+				width: 15,
+				name:  fmt.Sprintf("%-15s", columns[i]),
 				sort: func(order models.Order) models.ChannelsSort {
 					return func(c1, c2 *netmodels.Channel) bool {
 						return models.StringSort(c1.Node.Alias, c2.Node.Alias, order)
@@ -364,7 +366,7 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 					if forced {
 						aliasColor = color.Cyan(opts...)
 					}
-					return aliasColor(fmt.Sprintf("%-25s", alias))
+					return aliasColor(fmt.Sprintf("%-15s", alias))
 				},
 			}
 		case "GAUGE":
@@ -737,30 +739,34 @@ func channelDisabled(c *netmodels.Channel, opts ...color.Option) string {
 	if result == "" {
 		return result
 	}
-	return color.Red(opts...)(fmt.Sprintf("%-4s", result))
+	return color.Red(opts...)(result)
 }
 
 func status(c *netmodels.Channel, opts ...color.Option) string {
 	disabled := channelDisabled(c, opts...)
-	format := "%-13s"
-	if disabled != "" {
-		format = "%-9s"
-	}
 	switch c.Status {
 	case netmodels.ChannelActive:
-		return color.Green(opts...)(fmt.Sprintf(format, "active ")) + disabled
+		label := "on "
+		if disabled != "" {
+			return color.Green(opts...)(fmt.Sprintf("%-5s", label)) + disabled
+		}
+		return color.Green(opts...)(fmt.Sprintf("%-8s", label))
 	case netmodels.ChannelInactive:
-		return color.Red(opts...)(fmt.Sprintf(format, "inactive ")) + disabled
+		label := "off"
+		if disabled != "" {
+			return color.Red(opts...)(fmt.Sprintf("%-5s", label)) + disabled
+		}
+		return color.Red(opts...)(fmt.Sprintf("%-8s", label))
 	case netmodels.ChannelOpening:
-		return color.Yellow(opts...)(fmt.Sprintf("%-13s", "opening"))
+		return color.Yellow(opts...)(fmt.Sprintf("%-8s", "opening"))
 	case netmodels.ChannelClosing:
-		return color.Yellow(opts...)(fmt.Sprintf("%-13s", "closing"))
+		return color.Yellow(opts...)(fmt.Sprintf("%-8s", "closing"))
 	case netmodels.ChannelForceClosing:
-		return color.Yellow(opts...)(fmt.Sprintf("%-13s", "force closing"))
+		return color.Yellow(opts...)(fmt.Sprintf("%-8s", "f-close"))
 	case netmodels.ChannelWaitingClose:
-		return color.Yellow(opts...)(fmt.Sprintf("%-13s", "waiting close"))
+		return color.Yellow(opts...)(fmt.Sprintf("%-8s", "w-close"))
 	case netmodels.ChannelClosed:
-		return color.Red(opts...)(fmt.Sprintf("%-13s", "closed"))
+		return color.Red(opts...)(fmt.Sprintf("%-8s", "closed"))
 	}
 	return ""
 }

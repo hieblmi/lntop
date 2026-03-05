@@ -57,27 +57,44 @@ func (s *Summary) display() {
 	yellow := color.Yellow()
 	cyan := color.Cyan()
 	red := color.Red()
-	fmt.Fprintln(s.left, green("[ Channels ]"))
-	fmt.Fprintln(s.left, p.Sprintf("%s %s (%s|%s)",
+	_, _ = fmt.Fprintln(s.left, green("[ Channels ]"))
+	_, _ = fmt.Fprintln(s.left, p.Sprintf("%s %s (%s|%s)",
 		cyan("balance:"),
 		formatAmount(s.channelsBalance.Balance+s.channelsBalance.PendingOpenBalance),
 		green(p.Sprintf("%s", formatAmount(s.channelsBalance.Balance))),
 		yellow(p.Sprintf("%s", formatAmount(s.channelsBalance.PendingOpenBalance))),
 	))
-	fmt.Fprintln(s.left, fmt.Sprintf("%s %d %s %d %s %d %s",
+	// Count channels with disabled routing policies.
+	disabledLocal, disabledRemote := 0, 0
+	for _, ch := range s.channels.List() {
+		if ch.LocalPolicy != nil && ch.LocalPolicy.Disabled {
+			disabledLocal++
+		}
+		if ch.RemotePolicy != nil && ch.RemotePolicy.Disabled {
+			disabledRemote++
+		}
+	}
+	_, _ = fmt.Fprintf(s.left, "%s %d %s %d %s %d %s\n",
 		cyan("state  :"),
-		s.info.NumActiveChannels, green("active"),
+		s.info.NumActiveChannels, green("on"),
 		s.info.NumPendingChannels, yellow("pending"),
-		s.info.NumInactiveChannels, red("inactive"),
-	))
-	fmt.Fprintln(s.left, fmt.Sprintf("%s %s",
+		s.info.NumInactiveChannels, red("off"),
+	)
+	if disabledLocal > 0 || disabledRemote > 0 {
+		_, _ = fmt.Fprintf(s.left, "%s %d %s %d %s\n",
+			cyan("disabled:"),
+			disabledLocal, red("local⇈"),
+			disabledRemote, red("remote⇊"),
+		)
+	}
+	_, _ = fmt.Fprintf(s.left, "%s %s\n",
 		cyan("gauge  :"),
 		gaugeTotal(s.channelsBalance.Balance, s.channels.List()),
-	))
+	)
 
 	s.right.Clear()
-	fmt.Fprintln(s.right, green("[ Wallet ]"))
-	fmt.Fprintln(s.right, p.Sprintf("%s %s (%s|%s)",
+	_, _ = fmt.Fprintln(s.right, green("[ Wallet ]"))
+	_, _ = fmt.Fprintln(s.right, p.Sprintf("%s %s (%s|%s)",
 		cyan("balance:"),
 		formatAmount(s.walletBalance.TotalBalance),
 		green(p.Sprintf("%s", formatAmount(s.walletBalance.ConfirmedBalance))),

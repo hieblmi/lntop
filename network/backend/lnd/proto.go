@@ -20,9 +20,16 @@ func protoToWalletBalance(w *lnrpc.WalletBalanceResponse) *models.WalletBalance 
 }
 
 func protoToChannelsBalance(w *lnrpc.ChannelBalanceResponse) *models.ChannelsBalance {
+	var balance, pendingOpen int64
+	if lb := w.GetLocalBalance(); lb != nil {
+		balance = int64(lb.GetSat())
+	}
+	if pol := w.GetPendingOpenLocalBalance(); pol != nil {
+		pendingOpen = int64(pol.GetSat())
+	}
 	return &models.ChannelsBalance{
-		PendingOpenBalance: w.GetPendingOpenBalance(),
-		Balance:            w.GetBalance(),
+		Balance:            balance,
+		PendingOpenBalance: pendingOpen,
 	}
 }
 
@@ -57,7 +64,7 @@ func lookupInvoiceProtoToInvoice(resp *lnrpc.Invoice) *models.Invoice {
 		PaymentRequest:   resp.GetPaymentRequest(),
 		DescriptionHash:  resp.GetDescriptionHash(),
 		FallBackAddress:  resp.GetFallbackAddr(),
-		Settled:          resp.GetSettled(),
+		Settled:          resp.GetState() == lnrpc.Invoice_SETTLED,
 		CreationDate:     resp.GetCreationDate(),
 		SettleDate:       resp.GetSettleDate(),
 		Expiry:           resp.GetExpiry(),
@@ -109,7 +116,7 @@ func channelProtoToChannel(c *lnrpc.Channel) *models.Channel {
 		TotalAmountSent:     c.GetTotalSatoshisSent(),
 		TotalAmountReceived: c.GetTotalSatoshisReceived(),
 		UpdatesCount:        c.GetNumUpdates(),
-		CSVDelay:            c.GetCsvDelay(),
+		CSVDelay:            c.GetCsvDelay(), //nolint:staticcheck // deprecated proto field
 		Private:             c.GetPrivate(),
 		PendingHTLC:         HTLCs,
 	}
@@ -131,7 +138,7 @@ func pendingChannelsProtoToChannels(r *lnrpc.PendingChannelsResponse) []*models.
 		pending[i] = openingChannelProtoToChannel(respPending[i])
 	}
 
-	respClosing := r.GetPendingClosingChannels()
+	respClosing := r.GetPendingClosingChannels() //nolint:staticcheck // deprecated proto field
 	closing := make([]*models.Channel, len(respClosing))
 	for i := range respClosing {
 		closing[i] = closingChannelProtoToChannel(respClosing[i])
@@ -236,8 +243,8 @@ func sendPaymentProtoToPayment(payreq *models.PayReq, resp *lnrpc.SendResponse) 
 	if resp.PaymentRoute != nil {
 		payment.Route = &models.Route{
 			TimeLock: resp.PaymentRoute.GetTotalTimeLock(),
-			Fee:      resp.PaymentRoute.GetTotalFees(),
-			Amount:   resp.PaymentRoute.GetTotalAmt(),
+			Fee:      resp.PaymentRoute.GetTotalFees(), //nolint:staticcheck // deprecated proto field
+			Amount:   resp.PaymentRoute.GetTotalAmt(),  //nolint:staticcheck // deprecated proto field
 		}
 	}
 
@@ -250,8 +257,12 @@ func infoProtoToInfo(resp *lnrpc.GetInfoResponse) *models.Info {
 	}
 
 	chains := []string{}
+	network := ""
 	for i := range resp.Chains {
-		chains = append(chains, resp.Chains[i].Chain)
+		chains = append(chains, resp.Chains[i].Chain) //nolint:staticcheck // deprecated proto field
+		if resp.Chains[i].Network != "" {
+			network = resp.Chains[i].Network
+		}
 	}
 
 	return &models.Info{
@@ -266,7 +277,7 @@ func infoProtoToInfo(resp *lnrpc.GetInfoResponse) *models.Info {
 		Synced:              resp.SyncedToChain,
 		Version:             resp.Version,
 		Chains:              chains,
-		Testnet:             resp.Testnet,
+		Network:             network,
 	}
 }
 
@@ -345,7 +356,7 @@ func protoToTransaction(resp *lnrpc.Transaction) *models.Transaction {
 		BlockHeight:      resp.BlockHeight,
 		Date:             time.Unix(int64(resp.TimeStamp), 0),
 		TotalFees:        resp.TotalFees,
-		DestAddresses:    resp.DestAddresses,
+		DestAddresses:    resp.DestAddresses, //nolint:staticcheck // deprecated proto field
 	}
 }
 

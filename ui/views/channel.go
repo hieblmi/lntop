@@ -73,7 +73,7 @@ func (c *Channel) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
 	header.BgColor = gocui.ColorGreen
 	header.FgColor = gocui.ColorBlack | gocui.AttrBold
 	header.Rewind()
-	fmt.Fprintln(header, "Channel")
+	_, _ = fmt.Fprintln(header, "Channel")
 
 	v, err := g.SetView(CHANNEL, x0-1, y0+1, x1+2, y1-1, 0)
 	if err != nil {
@@ -96,7 +96,7 @@ func (c *Channel) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
 	footer.FgColor = gocui.ColorBlack
 	footer.Rewind()
 	blackBg := color.Black(color.Background)
-	fmt.Fprintf(footer, "%s%s %s%s %s%s %s%s\n",
+	_, _ = fmt.Fprintf(footer, "%s%s %s%s %s%s %s%s\n",
 		blackBg("F2"), "Menu",
 		blackBg("Enter"), "Channels",
 		blackBg("C"), "Get disabled",
@@ -123,28 +123,28 @@ func printPolicy(v *gocui.View, p *message.Printer, policy *netmodels.RoutingPol
 	green := color.Green()
 	cyan := color.Cyan()
 	red := color.Red()
-	fmt.Fprintln(v, "")
+	_, _ = fmt.Fprintln(v, "")
 	direction := "Outgoing"
 	if !outgoing {
 		direction = "Incoming"
 	}
-	fmt.Fprintf(v, green(" [ %s Policy ]\n"), direction)
+	_, _ = fmt.Fprintf(v, green(" [ %s Policy ]\n"), direction)
 	if policy.Disabled {
-		fmt.Fprintln(v, red("disabled"))
+		_, _ = fmt.Fprintln(v, red("disabled"))
 	}
-	fmt.Fprintf(v, "%s %d\n",
+	_, _ = fmt.Fprintf(v, "%s %d\n",
 		cyan("             Time lock delta:"), policy.TimeLockDelta)
-	fmt.Fprintf(v, "%s %s\n",
+	_, _ = fmt.Fprintf(v, "%s %s\n",
 		cyan("             Min htlc (msat):"), formatAmount(policy.MinHtlc))
-	fmt.Fprintf(v, "%s %s\n",
+	_, _ = fmt.Fprintf(v, "%s %s\n",
 		cyan("              Max htlc (sat):"), formatAmount(int64(policy.MaxHtlc/1000)))
-	fmt.Fprintf(v, "%s %s\n",
+	_, _ = fmt.Fprintf(v, "%s %s\n",
 		cyan("               Fee base msat:"), formatAmount(policy.FeeBaseMsat))
-	fmt.Fprintf(v, "%s %d\n",
+	_, _ = fmt.Fprintf(v, "%s %d\n",
 		cyan("         Fee rate milli msat:"), policy.FeeRateMilliMsat)
-	fmt.Fprintf(v, "%s %d\n",
+	_, _ = fmt.Fprintf(v, "%s %d\n",
 		cyan("       Inbound fee base msat:"), policy.InboundFeeBaseMsat)
-	fmt.Fprintf(v, "%s %d\n",
+	_, _ = fmt.Fprintf(v, "%s %d\n",
 		cyan(" Inbound fee rate milli msat:"), policy.InboundFeeRateMilliMsat)
 }
 
@@ -188,38 +188,38 @@ func (c *Channel) display() {
 	channel := c.channels.Current()
 	green := color.Green()
 	cyan := color.Cyan()
-	fmt.Fprintln(v, green(" [ Channel ]"))
-	fmt.Fprintf(v, "%s %s\n",
+	_, _ = fmt.Fprintln(v, green(" [ Channel ]"))
+	_, _ = fmt.Fprintf(v, "%s %s\n",
 		cyan("             Status:"), status(channel))
 	if channel.Status == netmodels.ChannelForceClosing {
-		fmt.Fprintf(v, "%s %d blocks\n",
+		_, _ = fmt.Fprintf(v, "%s %d blocks\n",
 			cyan("         Matured in:"), channel.BlocksTilMaturity)
 	}
-	fmt.Fprintf(v, "%s %d (%s)\n",
+	_, _ = fmt.Fprintf(v, "%s %d (%s)\n",
 		cyan("                 ID:"), channel.ID, ToScid(channel.ID))
-	fmt.Fprintf(v, "%s %s\n",
+	_, _ = fmt.Fprintf(v, "%s %s\n",
 		cyan("           Capacity:"), formatAmount(channel.Capacity))
-	fmt.Fprintf(v, "%s %s\n",
+	_, _ = fmt.Fprintf(v, "%s %s\n",
 		cyan("      Local Balance:"), formatAmount(channel.LocalBalance))
-	fmt.Fprintf(v, "%s %s\n",
+	_, _ = fmt.Fprintf(v, "%s %s\n",
 		cyan("     Remote Balance:"), formatAmount(channel.RemoteBalance))
-	fmt.Fprintf(v, "%s %s\n",
+	_, _ = fmt.Fprintf(v, "%s %s\n",
 		cyan("      Channel Point:"), channel.ChannelPoint)
-	fmt.Fprintln(v, "")
+	_, _ = fmt.Fprintln(v, "")
 
-	fmt.Fprintln(v, green(" [ Node ]"))
-	fmt.Fprintf(v, "%s %s\n",
+	_, _ = fmt.Fprintln(v, green(" [ Node ]"))
+	_, _ = fmt.Fprintf(v, "%s %s\n",
 		cyan("         PubKey:"), channel.RemotePubKey)
 	if channel.Node != nil {
 		alias, forced := channel.ShortAlias()
 		if forced {
 			alias = cyan(alias)
 		}
-		fmt.Fprintf(v, "%s %s\n",
+		_, _ = fmt.Fprintf(v, "%s %s\n",
 			cyan("          Alias:"), alias)
-		fmt.Fprintf(v, "%s %s\n",
+		_, _ = fmt.Fprintf(v, "%s %s\n",
 			cyan(" Total Capacity:"), formatAmount(channel.Node.TotalCapacity))
-		fmt.Fprintf(v, "%s %d\n",
+		_, _ = fmt.Fprintf(v, "%s %d\n",
 			cyan(" Total Channels:"), channel.Node.NumChannels)
 
 		if c.channels.CurrentNode != nil && c.channels.CurrentNode.PubKey == channel.RemotePubKey {
@@ -233,8 +233,8 @@ func (c *Channel) display() {
 					disabledIn++
 				}
 			}
-			fmt.Fprintf(v, "\n %s %s\n", cyan("Disabled from node:"), formatDisabledCount(disabledOut, channel.Node.NumChannels))
-			fmt.Fprintf(v, " %s %s\n", cyan("Disabled to node:  "), formatDisabledCount(disabledIn, channel.Node.NumChannels))
+			_, _ = fmt.Fprintf(v, "\n %s %s\n", cyan("Disabled from node:"), formatDisabledCount(disabledOut, channel.Node.NumChannels))
+			_, _ = fmt.Fprintf(v, " %s %s\n", cyan("Disabled to node:  "), formatDisabledCount(disabledIn, channel.Node.NumChannels))
 		}
 	}
 
@@ -247,16 +247,16 @@ func (c *Channel) display() {
 	}
 
 	if len(channel.PendingHTLC) > 0 {
-		fmt.Fprintln(v)
-		fmt.Fprintln(v, green(" [ Pending HTLCs ]"))
+		_, _ = fmt.Fprintln(v)
+		_, _ = fmt.Fprintln(v, green(" [ Pending HTLCs ]"))
 		for _, htlc := range channel.PendingHTLC {
-			fmt.Fprintf(v, "%s %t\n",
+			_, _ = fmt.Fprintf(v, "%s %t\n",
 				cyan("   Incoming:"), htlc.Incoming)
-			fmt.Fprintf(v, "%s %s\n",
+			_, _ = fmt.Fprintf(v, "%s %s\n",
 				cyan("     Amount:"), formatAmount(htlc.Amount))
-			fmt.Fprintf(v, "%s %d\n",
+			_, _ = fmt.Fprintf(v, "%s %d\n",
 				cyan(" Expiration:"), htlc.ExpirationHeight)
-			fmt.Fprintln(v)
+			_, _ = fmt.Fprintln(v)
 		}
 	}
 

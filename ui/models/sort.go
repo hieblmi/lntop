@@ -1,6 +1,7 @@
 package models
 
 import (
+	"cmp"
 	"strings"
 	"time"
 )
@@ -12,47 +13,31 @@ const (
 	Desc
 )
 
-func IntSort(a, b int, o Order) bool {
+// OrderedSort compares two ordered values according to the given sort order.
+func OrderedSort[T cmp.Ordered](a, b T, o Order) bool {
 	if o == Asc {
 		return a < b
 	}
 	return a > b
 }
 
-func Int32Sort(a, b int32, o Order) bool {
-	if o == Asc {
-		return a < b
-	}
-	return a > b
-}
+// IntSort compares two int values according to the given sort order.
+func IntSort(a, b int, o Order) bool { return OrderedSort(a, b, o) }
 
-func Int64Sort(a, b int64, o Order) bool {
-	if o == Asc {
-		return a < b
-	}
-	return a > b
-}
+// Int32Sort compares two int32 values according to the given sort order.
+func Int32Sort(a, b int32, o Order) bool { return OrderedSort(a, b, o) }
 
-func Float64Sort(a, b float64, o Order) bool {
-	if o == Asc {
-		return a < b
-	}
-	return a > b
-}
+// Int64Sort compares two int64 values according to the given sort order.
+func Int64Sort(a, b int64, o Order) bool { return OrderedSort(a, b, o) }
 
-func UInt32Sort(a, b uint32, o Order) bool {
-	if o == Asc {
-		return a < b
-	}
-	return a > b
-}
+// Float64Sort compares two float64 values according to the given sort order.
+func Float64Sort(a, b float64, o Order) bool { return OrderedSort(a, b, o) }
 
-func UInt64Sort(a, b uint64, o Order) bool {
-	if o == Asc {
-		return a < b
-	}
-	return a > b
-}
+// UInt32Sort compares two uint32 values according to the given sort order.
+func UInt32Sort(a, b uint32, o Order) bool { return OrderedSort(a, b, o) }
+
+// UInt64Sort compares two uint64 values according to the given sort order.
+func UInt64Sort(a, b uint64, o Order) bool { return OrderedSort(a, b, o) }
 
 func DateSort(a, b *time.Time, o Order) bool {
 	if o == Desc {
