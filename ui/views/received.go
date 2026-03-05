@@ -342,13 +342,11 @@ func NewReceived(cfg *config.View, rec *models.Received) *Received {
 			}
 		}
 	}
-	// Default sort by TIME descending so latest invoices show first
+	// Default sort by TIME descending so latest invoices show first.
+	// Do not mark the column as sorted so it renders like other tabs.
 	if timeColIndex >= 0 {
 		if cmp := received.columns[timeColIndex].sort; cmp != nil {
 			rec.Sort(cmp(models.Desc))
-			for i := range received.columns {
-				received.columns[i].sorted = (i == timeColIndex)
-			}
 		}
 	}
 	return received
