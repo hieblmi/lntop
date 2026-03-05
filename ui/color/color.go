@@ -1,30 +1,35 @@
 package color
 
-import "github.com/gookit/color"
+import (
+	"fmt"
 
-type Color color.Color
-
-var (
-	yellow     = SprintFunc(color.New(color.FgYellow))
-	yellowBold = SprintFunc(color.New(color.FgYellow, color.Bold))
-	green      = SprintFunc(color.New(color.FgGreen))
-	greenBold  = SprintFunc(color.New(color.FgGreen, color.Bold))
-	greenBg    = SprintFunc(color.New(color.FgBlack, color.BgGreen))
-	magentaBg  = SprintFunc(color.New(color.FgBlack, color.BgMagenta))
-	red        = SprintFunc(color.New(color.FgRed))
-	redBold    = SprintFunc(color.New(color.FgRed, color.Bold))
-	cyan       = SprintFunc(color.New(color.FgCyan))
-	cyanBold   = SprintFunc(color.New(color.FgCyan, color.Bold))
-	cyanBg     = SprintFunc(color.New(color.BgCyan, color.FgBlack))
-	white      = SprintFunc(color.New())
-	whiteBold  = SprintFunc(color.New(color.Bold))
-	blackBg    = SprintFunc(color.New(color.BgBlack, color.FgWhite))
-	black      = SprintFunc(color.New(color.FgBlack))
+	"github.com/charmbracelet/lipgloss"
+	"github.com/lucasb-eyer/go-colorful"
 )
 
-func SprintFunc(c color.Style) func(args ...interface{}) string {
+type Color = lipgloss.Color
+
+var (
+	yellow     = styleFunc(lipgloss.NewStyle().Foreground(lipgloss.Color("3")))
+	yellowBold = styleFunc(lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true))
+	green      = styleFunc(lipgloss.NewStyle().Foreground(lipgloss.Color("2")))
+	greenBold  = styleFunc(lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true))
+	greenBg    = styleFunc(lipgloss.NewStyle().Background(lipgloss.Color("2")).Foreground(lipgloss.Color("0")))
+	magentaBg  = styleFunc(lipgloss.NewStyle().Background(lipgloss.Color("5")).Foreground(lipgloss.Color("0")))
+	red        = styleFunc(lipgloss.NewStyle().Foreground(lipgloss.Color("1")))
+	redBold    = styleFunc(lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true))
+	cyan       = styleFunc(lipgloss.NewStyle().Foreground(lipgloss.Color("6")))
+	cyanBold   = styleFunc(lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true))
+	cyanBg     = styleFunc(lipgloss.NewStyle().Background(lipgloss.Color("6")).Foreground(lipgloss.Color("0")))
+	white      = styleFunc(lipgloss.NewStyle())
+	whiteBold  = styleFunc(lipgloss.NewStyle().Bold(true))
+	blackBg    = styleFunc(lipgloss.NewStyle().Background(lipgloss.Color("0")).Foreground(lipgloss.Color("7")))
+	black      = styleFunc(lipgloss.NewStyle().Foreground(lipgloss.Color("0")))
+)
+
+func styleFunc(s lipgloss.Style) func(args ...interface{}) string {
 	return func(args ...interface{}) string {
-		return c.Sprint(args...)
+		return s.Render(fmt.Sprint(args...))
 	}
 }
 
@@ -62,11 +67,9 @@ func Green(opts ...Option) func(a ...interface{}) string {
 	if options.bold {
 		return greenBold
 	}
-
 	if options.bg {
 		return greenBg
 	}
-
 	return green
 }
 
@@ -106,28 +109,29 @@ func Black(opts ...Option) func(a ...interface{}) string {
 }
 
 func Magenta(opts ...Option) func(a ...interface{}) string {
-	options := newOptions(opts)
-	if options.bg {
-		return magentaBg
-	}
 	return magentaBg
 }
 
 func HSL256(h, s, l float64, opts ...Option) func(a ...interface{}) string {
 	options := newOptions(opts)
-	val := color.HSL(h, s, l).C256().Value()
-	c := color.S256(val)
+	// h is expected in [0,1], colorful.Hsl expects [0,360].
+	c := colorful.Hsl(h*360, s, l)
+	hex := c.Hex()
+
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color(hex))
 	if options.bg {
-		fg := color.White.C256().Value()
+		fg := "#ffffff"
 		if l > 0.5 {
-			fg = color.Black.C256().Value()
+			fg = "#000000"
 		}
-		c = color.S256(fg, val)
+		style = lipgloss.NewStyle().
+			Foreground(lipgloss.Color(fg)).
+			Background(lipgloss.Color(hex))
 	}
 	if options.bold {
-		c.AddOpts(color.Bold)
+		style = style.Bold(true)
 	}
 	return func(a ...interface{}) string {
-		return c.Sprint(a...)
+		return style.Render(fmt.Sprint(a...))
 	}
 }
