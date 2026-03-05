@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 var menuItems = []struct {
@@ -24,19 +25,16 @@ var (
 			BorderForeground(lipgloss.Color("#5b37b7"))
 
 	menuItemStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#94a3b8")).
-			Padding(0, 1)
+			Foreground(lipgloss.Color("#94a3b8"))
 
 	menuActiveStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#e0e7ff")).
 			Background(lipgloss.Color("#312e81")).
-			Bold(true).
-			Padding(0, 1)
+			Bold(true)
 
 	menuTitleStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#a78bfa")).
-			Bold(true).
-			Padding(0, 1)
+			Bold(true)
 )
 
 type Menu struct {
@@ -48,6 +46,15 @@ func (m *Menu) Current() string {
 		return menuItems[m.Cursor].viewName
 	}
 	return ""
+}
+
+func (m *Menu) SetCurrent(viewName string) {
+	for i := range menuItems {
+		if menuItems[i].viewName == viewName {
+			m.Cursor = i
+			return
+		}
+	}
 }
 
 func (m *Menu) CursorDown() {
@@ -63,24 +70,27 @@ func (m *Menu) CursorUp() {
 }
 
 func (m *Menu) Render(width, height int) string {
-	// Border adds 1 char on right (left border disabled), top, bottom.
-	// So inner content width = width - 1 (right border).
+	if width < 1 {
+		width = 1
+	}
+	// Border adds one visible cell on the right side.
 	innerW := width - 1
-	if innerW < 12 {
-		innerW = 12
+	if innerW < 1 {
+		innerW = 1
 	}
 
 	var b strings.Builder
 
-	b.WriteString(menuTitleStyle.Width(innerW).Render("MENU"))
+	b.WriteString(menuTitleStyle.Render(padRight("MENU", innerW)))
 	b.WriteString("\n")
 
 	for i, item := range menuItems {
-		line := fmt.Sprintf("%-9s", item.label)
+		line := ansi.Truncate(fmt.Sprintf("%-9s", item.label), innerW, "")
+		line = padRight(line, innerW)
 		if i == m.Cursor {
-			b.WriteString(menuActiveStyle.Width(innerW).Render(line))
+			b.WriteString(menuActiveStyle.Render(line))
 		} else {
-			b.WriteString(menuItemStyle.Width(innerW).Render(line))
+			b.WriteString(menuItemStyle.Render(line))
 		}
 		b.WriteString("\n")
 	}
@@ -92,7 +102,7 @@ func (m *Menu) Render(width, height int) string {
 	}
 
 	b.WriteString(renderFooter(innerW, "F2", "Close"))
-	return menuBorderStyle.Width(innerW).Render(b.String())
+	return menuBorderStyle.Render(b.String())
 }
 
 func NewMenu() *Menu { return &Menu{} }

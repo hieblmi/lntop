@@ -34,11 +34,27 @@ type Routing struct {
 	ColCursor     int
 }
 
-func (c *Routing) Name() string    { return ROUTING }
-func (c *Routing) CursorDown()     { if c.Cursor < c.maxIndex() { c.Cursor++ } }
-func (c *Routing) CursorUp()       { if c.Cursor > 0 { c.Cursor-- } }
-func (c *Routing) ColumnRight()    { if c.ColCursor < len(c.columns)-1 { c.ColCursor++ } }
-func (c *Routing) ColumnLeft()     { if c.ColCursor > 0 { c.ColCursor-- } }
+func (c *Routing) Name() string { return ROUTING }
+func (c *Routing) CursorDown() {
+	if c.Cursor < c.maxIndex() {
+		c.Cursor++
+	}
+}
+func (c *Routing) CursorUp() {
+	if c.Cursor > 0 {
+		c.Cursor--
+	}
+}
+func (c *Routing) ColumnRight() {
+	if c.ColCursor < len(c.columns)-1 {
+		c.ColCursor++
+	}
+}
+func (c *Routing) ColumnLeft() {
+	if c.ColCursor > 0 {
+		c.ColCursor--
+	}
+}
 func (c *Routing) Home()           { c.Cursor = 0 }
 func (c *Routing) End()            { c.Cursor = c.maxIndex() }
 func (c *Routing) PageDown(ps int) { c.Cursor = min(c.Cursor+ps, c.maxIndex()) }
@@ -58,14 +74,14 @@ func (c *Routing) Render(width, height int) string {
 	// Column header.
 	var hdr strings.Builder
 	for i, col := range c.columns {
-		name := col.name
+		name := renderHeaderCell(col.name, col.width, DefaultColStyle)
 		if i == c.ColCursor {
-			name = color.Cyan(color.Background)(col.name)
+			name = renderHeaderCell(col.name, col.width, ActiveColStyle)
 		}
 		hdr.WriteString(name)
 		hdr.WriteString(" ")
 	}
-	b.WriteString(HeaderBarStyle.Width(width).Render(hdr.String()))
+	b.WriteString(HeaderBarStyle.Width(width).MaxWidth(width).Render(safeTruncRow(hdr.String(), width)))
 	b.WriteString("\n")
 
 	dataHeight := height - 2
@@ -90,14 +106,14 @@ func (c *Routing) Render(width, height int) string {
 			if i == c.ColCursor {
 				opt = color.Bold
 			}
-			row.WriteString(col.display(item, opt))
+			row.WriteString(fitCell(col.display(item, opt), col.width))
 			row.WriteString(" ")
 		}
 		line := row.String()
 		if idx == c.Cursor {
-			line = SelectedRowStyle.Width(width).Render(stripAnsi(truncRow(line, width)))
+			line = selectedRow(line, width)
 		} else {
-			line = truncRow(line, width)
+			line = safeTruncRow(line, width)
 		}
 		b.WriteString(line)
 		b.WriteString("\n")

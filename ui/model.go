@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/hieblmi/lntop/app"
 	"github.com/hieblmi/lntop/events"
@@ -140,9 +141,10 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.menuOpen {
 			m.menuOpen = false
 		} else {
+			m.views.Menu.SetCurrent(m.activeView)
 			m.menuOpen = true
 		}
-		return m, nil
+		return m, tea.ClearScreen
 	}
 
 	// If menu is open, handle menu navigation.
@@ -163,12 +165,12 @@ func (m *model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":
 		m.views.Menu.CursorUp()
-		m.activeView = m.views.Menu.Current()
 	case "down", "j":
 		m.views.Menu.CursorDown()
-		m.activeView = m.views.Menu.Current()
 	case "enter":
+		m.activeView = m.views.Menu.Current()
 		m.menuOpen = false
+		return m, tea.ClearScreen
 	}
 	return m, nil
 }
@@ -397,9 +399,10 @@ func (m *model) onEnter() {
 
 // mainHeight returns the height available for the main content area.
 func (m *model) mainHeight() int {
+	renderW := m.renderWidth()
 	// We compute the actual summary height dynamically.
-	summaryLines := strings.Count(m.views.Summary.Render(m.width), "\n") + 1
-	// header(1) + blank(1) + summary + main content
+	summaryLines := strings.Count(m.views.Summary.Render(renderW), "\n") + 1
+	// header(1) + blank(1) + summary.
 	used := 1 + 1 + summaryLines
 	h := m.height - used
 	if h < 3 {
@@ -408,16 +411,29 @@ func (m *model) mainHeight() int {
 	return h
 }
 
+// renderWidth keeps one terminal column free to prevent autowrap artifacts.
+func (m *model) renderWidth() int {
+	// Keep a right margin to absorb terminal/library width differences
+	// (notably around emoji/wide glyphs) and avoid autowrap artifacts.
+	w := m.width - 6
+	if w < 1 {
+		return 1
+	}
+	return w
+}
+
 func (m *model) View() string {
 	if m.width == 0 || m.height == 0 {
 		return "Loading..."
 	}
 
+	renderW := m.renderWidth()
+
 	// Header.
-	header := m.views.Header.Render(m.width)
+	header := m.views.Header.Render(renderW)
 
 	// Summary.
-	summary := m.views.Summary.Render(m.width)
+	summary := m.views.Summary.Render(renderW)
 
 	// Main area.
 	mainH := m.mainHeight()
@@ -429,34 +445,69 @@ func (m *model) View() string {
 	if m.inDetail {
 		switch m.activeView {
 		case views.CHANNELS:
-			mainContent = m.views.Channel.Render(m.width, mainH)
+			mainContent = m.views.Channel.Render(renderW, mainH)
 		case views.TRANSACTIONS:
-			mainContent = m.views.Transaction.Render(m.width, mainH)
+			mainContent = m.views.Transaction.Render(renderW, mainH)
 		default:
-			mainContent = m.renderActiveTable(m.width, mainH)
+			mainContent = m.renderActiveTable(renderW, mainH)
 		}
 	} else if m.menuOpen {
 		menuWidth := 16
-		contentWidth := m.width - menuWidth
+		if menuWidth >= renderW {
+			menuWidth = renderW / 2
+			if menuWidth < 1 {
+				menuWidth = 1
+			}
+		}
+		contentWidth := renderW - menuWidth
+		if contentWidth < 1 {
+			contentWidth = 1
+		}
 		menuStr := m.views.Menu.Render(menuWidth, mainH)
-		contentStr := m.renderActiveTable(contentWidth, mainH)
+		contentStr := m.renderTable(m.currentTableView(), contentWidth, mainH)
 		mainContent = lipgloss.JoinHorizontal(lipgloss.Top, menuStr, contentStr)
 	} else {
-		mainContent = m.renderActiveTable(m.width, mainH)
+		mainContent = m.renderTable(m.activeView, renderW, mainH)
 	}
 
 	result := header + "\n\n" + summary + "\n" + mainContent
-
-	// Truncate to terminal height to prevent scrolling past the header.
 	lines := strings.Split(result, "\n")
+	for i := range lines {
+		lines[i] = ansi.Truncate(lines[i], renderW, "")
+		vis := lipgloss.Width(lines[i])
+		if vis < renderW {
+			lines[i] += strings.Repeat(" ", renderW-vis)
+		}
+	}
+
+	// Clamp to terminal height to prevent scrolling past the header.
 	if len(lines) > m.height {
 		lines = lines[:m.height]
 	}
+	// Keep a stable full-screen frame so stale lines from previous renders
+	// cannot remain visible when layout shape changes.
+	for len(lines) < m.height {
+		lines = append(lines, strings.Repeat(" ", renderW))
+	}
+
 	return strings.Join(lines, "\n")
 }
 
+func (m *model) currentTableView() string {
+	if m.menuOpen {
+		if preview := m.views.Menu.Current(); preview != "" {
+			return preview
+		}
+	}
+	return m.activeView
+}
+
 func (m *model) renderActiveTable(width, height int) string {
-	switch m.activeView {
+	return m.renderTable(m.activeView, width, height)
+}
+
+func (m *model) renderTable(viewName string, width, height int) string {
+	switch viewName {
 	case views.CHANNELS:
 		return m.views.Channels.Render(width, height)
 	case views.TRANSACTIONS:
