@@ -80,12 +80,12 @@ func (m Channel) ShortAlias() (alias string, forced bool) {
 		alias = m.Node.ForcedAlias
 		forced = true
 	} else if m.Node == nil || m.Node.Alias == "" {
-		alias = m.RemotePubKey[:25]
+		alias = m.RemotePubKey[:15]
 	} else {
 		alias = strings.ReplaceAll(m.Node.Alias, "\ufe0f", "")
 	}
-	if runewidth.StringWidth(alias) > 25 {
-		alias = runewidth.Truncate(alias, 25, "")
+	if runewidth.StringWidth(alias) > 15 {
+		alias = runewidth.Truncate(alias, 15, "")
 	}
 	return
 }

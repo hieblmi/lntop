@@ -66,9 +66,9 @@ func (s *Summary) display() {
 	))
 	fmt.Fprintf(s.left, "%s %d %s %d %s %d %s\n",
 		cyan("state  :"),
-		s.info.NumActiveChannels, green("active"),
+		s.info.NumActiveChannels, green("on"),
 		s.info.NumPendingChannels, yellow("pending"),
-		s.info.NumInactiveChannels, red("inactive"),
+		s.info.NumInactiveChannels, red("off"),
 	)
 	fmt.Fprintf(s.left, "%s %s\n",
 		cyan("gauge  :"),
