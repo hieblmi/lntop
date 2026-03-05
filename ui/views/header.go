@@ -51,14 +51,14 @@ func (h *Header) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
 
 	v.Clear()
 	cyan := color.Cyan()
-	fmt.Fprintln(v, fmt.Sprintf("%s %s %s %s %s %s",
+	fmt.Fprintf(v, "%s %s %s %s %s %s %d %s %d\n",
 		color.Cyan(color.Background)(h.Info.Alias),
-		cyan(fmt.Sprintf("%s-v%s", "lnd", version)),
-		fmt.Sprintf("%s %s", chain, network),
+		cyan("lnd-v"+version),
+		chain, network,
 		sync,
-		fmt.Sprintf("%s %d", cyan("height:"), h.Info.BlockHeight),
-		fmt.Sprintf("%s %d", cyan("peers:"), h.Info.NumPeers),
-	))
+		cyan("height:"), h.Info.BlockHeight,
+		cyan("peers:"), h.Info.NumPeers,
+	)
 	return nil
 }
 

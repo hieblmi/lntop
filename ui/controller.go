@@ -164,19 +164,7 @@ func (c *controller) Listen(ctx context.Context, g *gocui.Gui, sub chan *events.
 				c.models.RefreshChannels,
 				c.models.RefreshForwardingHistory,
 			)
-		case events.ChannelPending:
-			refresh(
-				c.models.RefreshInfo,
-				c.models.RefreshChannelsBalance,
-				c.models.RefreshChannels,
-			)
-		case events.ChannelActive:
-			refresh(
-				c.models.RefreshInfo,
-				c.models.RefreshChannelsBalance,
-				c.models.RefreshChannels,
-			)
-		case events.ChannelInactive:
+		case events.ChannelPending, events.ChannelActive, events.ChannelInactive:
 			refresh(
 				c.models.RefreshInfo,
 				c.models.RefreshChannelsBalance,
@@ -286,58 +274,25 @@ func (c *controller) OnEnter(g *gocui.Gui, v *gocui.View) error {
 			return nil
 		}
 
+		var next views.View
 		switch current {
 		case views.TRANSACTIONS:
-			err := c.views.Main.Delete(g)
-			if err != nil {
-				return err
-			}
-
-			c.views.Main = c.views.Transactions
-			err = c.views.Transactions.Set(g, 11, 6, maxX-1, maxY)
-			if err != nil {
-				return err
-			}
+			next = c.views.Transactions
 		case views.CHANNELS:
-			err := c.views.Main.Delete(g)
-			if err != nil {
-				return err
-			}
-
-			c.views.Main = c.views.Channels
-			err = c.views.Channels.Set(g, 11, 6, maxX-1, maxY)
-			if err != nil {
-				return err
-			}
+			next = c.views.Channels
 		case views.ROUTING:
-			err := c.views.Main.Delete(g)
-			if err != nil {
-				return err
-			}
-
-			c.views.Main = c.views.Routing
-			err = c.views.Routing.Set(g, 11, 6, maxX-1, maxY)
-			if err != nil {
-				return err
-			}
+			next = c.views.Routing
 		case views.FWDINGHIST:
-			err := c.views.Main.Delete(g)
-			if err != nil {
-				return err
-			}
-			c.views.Main = c.views.FwdingHist
-			err = c.views.FwdingHist.Set(g, 11, 6, maxX-1, maxY)
-			if err != nil {
-				return err
-			}
+			next = c.views.FwdingHist
 		case views.RECEIVED:
-			err := c.views.Main.Delete(g)
-			if err != nil {
+			next = c.views.Received
+		}
+		if next != nil {
+			if err := c.views.Main.Delete(g); err != nil {
 				return err
 			}
-			c.views.Main = c.views.Received
-			err = c.views.Received.Set(g, 11, 6, maxX-1, maxY)
-			if err != nil {
+			c.views.Main = next
+			if err := next.Set(g, 11, 6, maxX-1, maxY); err != nil {
 				return err
 			}
 		}

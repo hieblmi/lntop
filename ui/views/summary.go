@@ -64,16 +64,16 @@ func (s *Summary) display() {
 		green(p.Sprintf("%s", formatAmount(s.channelsBalance.Balance))),
 		yellow(p.Sprintf("%s", formatAmount(s.channelsBalance.PendingOpenBalance))),
 	))
-	fmt.Fprintln(s.left, fmt.Sprintf("%s %d %s %d %s %d %s",
+	fmt.Fprintf(s.left, "%s %d %s %d %s %d %s\n",
 		cyan("state  :"),
 		s.info.NumActiveChannels, green("active"),
 		s.info.NumPendingChannels, yellow("pending"),
 		s.info.NumInactiveChannels, red("inactive"),
-	))
-	fmt.Fprintln(s.left, fmt.Sprintf("%s %s",
+	)
+	fmt.Fprintf(s.left, "%s %s\n",
 		cyan("gauge  :"),
 		gaugeTotal(s.channelsBalance.Balance, s.channels.List()),
-	))
+	)
 
 	s.right.Clear()
 	fmt.Fprintln(s.right, green("[ Wallet ]"))

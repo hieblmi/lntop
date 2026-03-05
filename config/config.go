@@ -2,8 +2,6 @@ package config
 
 import (
 	"fmt"
-	"io"
-	"log"
 	"os"
 	"os/user"
 	"path"
@@ -52,11 +50,11 @@ type View struct {
 }
 
 func (co ColumnOptions) GetOption(columnName, option string) string {
-	if o, ok := co[columnName]; !ok {
+	o, ok := co[columnName]
+	if !ok {
 		return ""
-	} else {
-		return o[option]
 	}
+	return o[option]
 }
 
 type Aliases map[string]string
@@ -82,27 +80,10 @@ func Load(path string) (*Config, error) {
 
 // loadFromPath loads the configuration from configuration file path.
 func loadFromPath(path string, out interface{}) error {
-	var err error
-
-	f, err := os.Open(path)
-	if f != nil {
-		defer func() {
-			ferr := f.Close()
-			if ferr != nil {
-				log.Println(ferr)
-			}
-		}()
-	}
-
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-
-	data, err := io.ReadAll(f)
-	if err != nil {
-		return err
-	}
-
 	return toml.Unmarshal(data, out)
 }
 

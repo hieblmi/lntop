@@ -3,6 +3,7 @@ package lnd
 import (
 	"crypto/tls"
 	"os"
+	"strings"
 
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
@@ -57,7 +58,10 @@ func newClientConn(c *config.Network) (*grpc.ClientConn, error) {
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(c.MaxMsgRecvSize)),
 	}
 
-	conn, err := grpc.NewClient(c.Address, opts...)
+	// Strip legacy "//" prefix that was used with the old grpc.Dial API.
+	address := strings.TrimPrefix(c.Address, "//")
+
+	conn, err := grpc.NewClient(address, opts...)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}

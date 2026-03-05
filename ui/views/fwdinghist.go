@@ -235,11 +235,11 @@ func (c *FwdingHist) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
 	footer.FgColor = gocui.ColorBlack
 	footer.Rewind()
 	blackBg := color.Black(color.Background)
-	fmt.Fprintln(footer, fmt.Sprintf("%s%s %s%s %s%s",
+	fmt.Fprintf(footer, "%s%s %s%s %s%s\n",
 		blackBg("F2"), "Menu",
 		blackBg("Enter"), "FwdingHist",
 		blackBg("F10"), "Quit",
-	))
+	)
 	return nil
 }
 
@@ -408,11 +408,11 @@ func NewFwdingHist(cfg *config.View, hist *models.FwdingHist) *FwdingHist {
 }
 
 func fee(fee uint64, opts ...color.Option) string {
-	if fee >= 0 && fee < 100 {
+	if fee < 100 {
 		return color.Cyan(opts...)(fmt.Sprintf("%9d", fee))
-	} else if fee >= 100 && fee < 999 {
+	}
+	if fee < 999 {
 		return color.Green(opts...)(fmt.Sprintf("%9d", fee))
 	}
-
 	return color.Yellow(opts...)(fmt.Sprintf("%9d", fee))
 }

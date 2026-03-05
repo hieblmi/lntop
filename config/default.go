@@ -115,7 +115,7 @@ func NewDefault() *Config {
 	usr, _ := user.Current()
 	lndAddress, present := os.LookupEnv("LND_ADDRESS")
 	if !present {
-		lndAddress = "//127.0.0.1:10009"
+		lndAddress = "127.0.0.1:10009"
 	}
 	certPath, present := os.LookupEnv("CERT_PATH")
 	if !present {
