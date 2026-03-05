@@ -17,7 +17,7 @@ dest = "%[2]s"
 [network]
 name = "%[3]s"
 type = "%[4]s"
-address = "%[5]s"
+address = "%[5]s" # host:port format, e.g. "localhost:10009"
 cert = "%[6]s"
 macaroon = "%[7]s"
 macaroon_timeout = %[8]d
