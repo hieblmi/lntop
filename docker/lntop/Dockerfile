@@ -5,12 +5,6 @@ RUN apk add --no-cache --update git gcc musl-dev
 
 ARG LNTOP_SRC_PATH
 
-WORKDIR /root/_build
-
-# we want to populate the module cache based on the go.{mod,sum} files.
-COPY "$LNTOP_SRC_PATH/go.mod" .
-COPY "$LNTOP_SRC_PATH/go.sum" .
-
 WORKDIR $GOPATH/src/github.com/edouardparis/lntop
 COPY "$LNTOP_SRC_PATH" .
 
