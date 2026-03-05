@@ -1,10 +1,10 @@
 package views
 
 import (
-	"bytes"
 	"fmt"
+	"strings"
 
-	"github.com/awesome-gocui/gocui"
+	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 
@@ -14,43 +14,10 @@ import (
 	"github.com/hieblmi/lntop/ui/models"
 )
 
-const (
-	CHANNELS         = "channels"
-	CHANNELS_COLUMNS = "channels_columns"
-	CHANNELS_FOOTER  = "channels_footer"
-)
-
 var DefaultChannelsColumns = []string{
-	"STATUS",
-	"ALIAS",
-	"GAUGE",
-	"LOCAL",
-	"REMOTE",
-	"CAP",
-	"SENT",
-	"RECEIVED",
-	"HTLC",
-	"UNSETTLED",
-	"CFEE",
-	"LAST UPDATE",
-	"AGE",
-	"PRIVATE",
-	"ID",
-}
-
-type Channels struct {
-	cfg *config.View
-
-	columns []channelsColumn
-
-	columnHeadersView *gocui.View
-	columnViews       []*gocui.View
-	view              *gocui.View
-
-	channels *models.Channels
-
-	ox, oy int
-	cx, cy int
+	"STATUS", "ALIAS", "GAUGE", "LOCAL", "REMOTE", "CAP",
+	"SENT", "RECEIVED", "HTLC", "UNSETTLED", "CFEE",
+	"LAST UPDATE", "AGE", "PRIVATE", "ID",
 }
 
 type channelsColumn struct {
@@ -61,265 +28,153 @@ type channelsColumn struct {
 	display func(*netmodels.Channel, ...color.Option) string
 }
 
-func (c Channels) Name() string {
-	return CHANNELS
+type Channels struct {
+	cfg       *config.View
+	columns   []channelsColumn
+	channels  *models.Channels
+	Cursor    int
+	Offset    int
+	ColCursor int
 }
 
-func (c *Channels) Wrap(v *gocui.View) View {
-	c.view = v
-	return c
+func (c *Channels) Name() string { return CHANNELS }
+
+func (c *Channels) CursorDown() {
+	if c.Cursor < c.channels.Len()-1 {
+		c.Cursor++
+	}
 }
 
-func (c Channels) currentColumnIndex() int {
-	x := c.ox + c.cx
-	index := 0
-	sum := 0
+func (c *Channels) CursorUp() {
+	if c.Cursor > 0 {
+		c.Cursor--
+	}
+}
+
+func (c *Channels) ColumnRight() {
+	if c.ColCursor < len(c.columns)-1 {
+		c.ColCursor++
+	}
+}
+
+func (c *Channels) ColumnLeft() {
+	if c.ColCursor > 0 {
+		c.ColCursor--
+	}
+}
+
+func (c *Channels) Home() { c.Cursor = 0 }
+
+func (c *Channels) End() {
+	if n := c.channels.Len(); n > 0 {
+		c.Cursor = n - 1
+	}
+}
+
+func (c *Channels) PageDown(pageSize int) {
+	n := c.channels.Len()
+	c.Cursor += pageSize
+	if c.Cursor >= n {
+		c.Cursor = n - 1
+	}
+	if c.Cursor < 0 {
+		c.Cursor = 0
+	}
+}
+
+func (c *Channels) PageUp(pageSize int) {
+	c.Cursor -= pageSize
+	if c.Cursor < 0 {
+		c.Cursor = 0
+	}
+}
+
+func (c *Channels) Index() int { return c.Cursor }
+
+func (c *Channels) Sort(column string, order models.Order) {
+	index := c.ColCursor
+	if index >= len(c.columns) {
+		return
+	}
+	col := c.columns[index]
+	if col.sort == nil {
+		return
+	}
+	c.channels.Sort(col.sort(order))
 	for i := range c.columns {
-		sum += c.columns[i].width + 1
-		if x < sum {
-			return index
-		}
-		index++
-	}
-	return index
-}
-
-func (c Channels) Sort(column string, order models.Order) {
-	if column == "" {
-		index := c.currentColumnIndex()
-		if index >= len(c.columns) {
-			return
-		}
-		col := c.columns[index]
-		if col.sort == nil {
-			return
-		}
-
-		c.channels.Sort(col.sort(order))
-		for i := range c.columns {
-			c.columns[i].sorted = (i == index)
-		}
+		c.columns[i].sorted = (i == index)
 	}
 }
 
-func (c Channels) Origin() (int, int) {
-	return c.ox, c.oy
-}
+func (c *Channels) Render(width, height int) string {
+	var b strings.Builder
 
-func (c Channels) Cursor() (int, int) {
-	return c.cx, c.cy
-}
-
-func (c *Channels) SetCursor(cx, cy int) error {
-	if err := cursorCompat(c.columnHeadersView, cx, 0); err != nil {
-		return err
-	}
-	err := c.columnHeadersView.SetCursor(cx, 0)
-	if err != nil {
-		return err
-	}
-
-	for _, cv := range c.columnViews {
-		if err := cursorCompat(c.view, cx, cy); err != nil {
-			return err
+	// Column header.
+	var hdr strings.Builder
+	for i, col := range c.columns {
+		name := col.name
+		if i == c.ColCursor {
+			name = color.Cyan(color.Background)(col.name)
+		} else if col.sorted {
+			name = color.Magenta(color.Background)(col.name)
 		}
-		err = cv.SetCursor(cx, cy)
-		if err != nil {
-			return err
-		}
+		hdr.WriteString(name)
+		hdr.WriteString(" ")
+	}
+	b.WriteString(HeaderBarStyle.Width(width).MaxWidth(width).Render(truncRow(hdr.String(), width)))
+	b.WriteString("\n")
+
+	// Data rows.
+	dataHeight := height - 2 // header + footer
+	items := c.channels.List()
+
+	if c.Cursor >= len(items) {
+		c.Cursor = len(items) - 1
+	}
+	if c.Cursor < 0 {
+		c.Cursor = 0
+	}
+	if c.Cursor < c.Offset {
+		c.Offset = c.Cursor
+	}
+	if c.Cursor >= c.Offset+dataHeight {
+		c.Offset = c.Cursor - dataHeight + 1
 	}
 
-	c.cx, c.cy = cx, cy
-	return nil
-}
-
-func (c *Channels) SetOrigin(ox, oy int) error {
-	err := c.columnHeadersView.SetOrigin(ox, 0)
-	if err != nil {
-		return err
-	}
-	err = c.view.SetOrigin(ox, oy)
-	if err != nil {
-		return err
+	end := c.Offset + dataHeight
+	if end > len(items) {
+		end = len(items)
 	}
 
-	for _, cv := range c.columnViews {
-		err = cv.SetOrigin(0, oy)
-		if err != nil {
-			return err
-		}
-	}
-
-	c.ox, c.oy = ox, oy
-	return nil
-}
-
-func (c *Channels) Speed() (int, int, int, int) {
-	current := c.currentColumnIndex()
-	up := 0
-	down := 0
-	if c.Index() > 0 {
-		up = 1
-	}
-	if c.Index() < c.channels.Len()-1 {
-		down = 1
-	}
-	if current > len(c.columns)-1 {
-		return 0, c.columns[current-1].width + 1, down, up
-	}
-	if current == 0 {
-		return c.columns[0].width + 1, 0, down, up
-	}
-	return c.columns[current].width + 1,
-		c.columns[current-1].width + 1,
-		down, up
-}
-
-func (c *Channels) Limits() (pageSize int, fullSize int) {
-	_, pageSize = c.view.Size()
-	fullSize = c.channels.Len()
-	return
-}
-
-func (c Channels) Index() int {
-	_, oy := c.Origin()
-	_, cy := c.Cursor()
-	return cy + oy
-}
-
-func (c *Channels) Delete(g *gocui.Gui) error {
-	err := g.DeleteView(CHANNELS_COLUMNS)
-	if err != nil {
-		return err
-	}
-
-	err = g.DeleteView(CHANNELS)
-	if err != nil {
-		return err
-	}
-
-	for _, cv := range c.columnViews {
-		err = g.DeleteView(cv.Name())
-		if err != nil {
-			return err
-		}
-	}
-	c.columnViews = c.columnViews[:0]
-	return g.DeleteView(CHANNELS_FOOTER)
-}
-
-func (c *Channels) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
-	var err error
-	setCursor := false
-	c.columnHeadersView, err = g.SetView(CHANNELS_COLUMNS, x0-1, y0, x1+2, y0+2, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-		setCursor = true
-	}
-	c.columnHeadersView.Frame = false
-	c.columnHeadersView.BgColor = gocui.ColorGreen
-	c.columnHeadersView.FgColor = gocui.ColorBlack
-
-	c.view, err = g.SetView(CHANNELS, x0-1, y0+1, x1+2, y1-1, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-		setCursor = true
-	}
-	c.view.Frame = false
-	c.view.Autoscroll = false
-	c.view.SelBgColor = gocui.ColorCyan
-	c.view.SelFgColor = gocui.ColorBlack | gocui.AttrDim
-	c.view.Highlight = false
-	c.display(g)
-
-	if setCursor {
-		ox, oy := c.Origin()
-		err := c.SetOrigin(ox, oy)
-		if err != nil {
-			return err
-		}
-
-		cx, cy := c.Cursor()
-		err = c.SetCursor(cx, cy)
-		if err != nil {
-			return err
-		}
-	}
-
-	footer, err := g.SetView(CHANNELS_FOOTER, x0-1, y1-2, x1+2, y1, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-	}
-	footer.Frame = false
-	footer.BgColor = gocui.ColorCyan
-	footer.FgColor = gocui.ColorBlack
-	footer.Rewind()
-	blackBg := color.Black(color.Background)
-	_, _ = fmt.Fprintf(footer, "%s%s %s%s %s%s\n",
-		blackBg("F2"), "Menu",
-		blackBg("Enter"), "Channel",
-		blackBg("F10"), "Quit",
-	)
-	return nil
-}
-
-func (c *Channels) display(g *gocui.Gui) {
-	c.columnHeadersView.Rewind()
-	var buffer bytes.Buffer
-	currentColumnIndex := c.currentColumnIndex()
-	for i := range c.columns {
-		if currentColumnIndex == i {
-			buffer.WriteString(color.Cyan(color.Background)(c.columns[i].name))
-			buffer.WriteString(" ")
-			continue
-		} else if c.columns[i].sorted {
-			buffer.WriteString(color.Magenta(color.Background)(c.columns[i].name))
-			buffer.WriteString(" ")
-			continue
-		}
-		buffer.WriteString(c.columns[i].name)
-		buffer.WriteString(" ")
-	}
-	_, _ = fmt.Fprintln(c.columnHeadersView, buffer.String())
-
-	if len(c.columnViews) == 0 {
-		c.columnViews = make([]*gocui.View, len(c.columns))
-		x0, y0, _, y1 := c.view.Dimensions()
-		for i := range c.columns {
-			width := c.columns[i].width
-			cc, _ := g.SetView("channel_content_"+c.columns[i].name, x0, y0, x0+width+2, y1, 0)
-			cc.Frame = false
-			cc.Autoscroll = false
-			cc.SelBgColor = gocui.ColorCyan
-			cc.SelFgColor = gocui.ColorBlack | gocui.AttrDim
-			cc.Highlight = true
-			c.columnViews[i] = cc
-		}
-	}
-	for ci, item := range c.channels.List() {
-		x0, y0, _, y1 := c.view.Dimensions()
-		x0 -= c.ox
-		for i := range c.columns {
+	for idx := c.Offset; idx < end; idx++ {
+		item := items[idx]
+		var row strings.Builder
+		for i, col := range c.columns {
 			var opt color.Option
-			if currentColumnIndex == i {
+			if i == c.ColCursor {
 				opt = color.Bold
 			}
-			width := c.columns[i].width
-			cc, _ := g.SetView("channel_content_"+c.columns[i].name, x0, y0, x0+width+2, y1, 0)
-			c.columnViews[i] = cc
-			if ci == 0 {
-				cc.Rewind()
-			}
-			_, _ = fmt.Fprintln(cc, c.columns[i].display(item, opt), " ")
-			x0 += width + 1
+			row.WriteString(col.display(item, opt))
+			row.WriteString(" ")
 		}
+		line := row.String()
+		if idx == c.Cursor {
+			line = SelectedRowStyle.Width(width).Render(stripAnsi(truncRow(line, width)))
+		} else {
+			line = truncRow(line, width)
+		}
+		b.WriteString(line)
+		b.WriteString("\n")
 	}
+
+	// Pad empty rows.
+	for i := end - c.Offset; i < dataHeight; i++ {
+		b.WriteString("\n")
+	}
+
+	// Footer.
+	b.WriteString(renderFooter(width, "F2", "Menu", "Enter", "Channel", "F10", "Quit"))
+	return b.String()
 }
 
 func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
@@ -345,7 +200,6 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 				name:  fmt.Sprintf("%-8s", columns[i]),
 				sort: func(order models.Order) models.ChannelsSort {
 					return func(c1, c2 *netmodels.Channel) bool {
-						// status meanings are kinda the opposite of their numerical value
 						return models.IntSort(-c1.Status, -c2.Status, order)
 					}
 				},
@@ -382,21 +236,26 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 					}
 				},
 				display: func(c *netmodels.Channel, opts ...color.Option) string {
-					index := int(c.LocalBalance * int64(15) / c.Capacity)
-					var buffer bytes.Buffer
-					cyan := color.Cyan(opts...)
-					white := color.White(opts...)
+					pct := float64(c.LocalBalance) / float64(c.Capacity)
+					filled := int(pct * 15)
+					var buf strings.Builder
 					for i := 0; i < 15; i++ {
-						if i < index {
-							buffer.WriteString(cyan("|"))
-							continue
+						if i < filled {
+							ratio := float64(i) / 15.0
+							var cl lipgloss.Color
+							if ratio < 0.5 {
+								cl = lipgloss.Color("#22c55e")
+							} else if ratio < 0.75 {
+								cl = lipgloss.Color("#eab308")
+							} else {
+								cl = lipgloss.Color("#ef4444")
+							}
+							buf.WriteString(lipgloss.NewStyle().Foreground(cl).Render("\u2588"))
+						} else {
+							buf.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#333333")).Render("\u2591"))
 						}
-						buffer.WriteString(" ")
 					}
-					return fmt.Sprintf("%s%s%s",
-						white("["),
-						buffer.String(),
-						white(fmt.Sprintf("] %2d%%", c.LocalBalance*100/c.Capacity)))
+					return fmt.Sprintf("%s %2d%%", buf.String(), c.LocalBalance*100/c.Capacity)
 				},
 			}
 		case "LOCAL":
@@ -527,7 +386,6 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 				name:  fmt.Sprintf("%-7s", columns[i]),
 				sort: func(order models.Order) models.ChannelsSort {
 					return func(c1, c2 *netmodels.Channel) bool {
-						// public > private
 						return models.BoolSort(!c1.Private, !c2.Private, order)
 					}
 				},
@@ -589,8 +447,7 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 				name:  fmt.Sprintf("%-8s", columns[i]),
 				sort: func(order models.Order) models.ChannelsSort {
 					return func(c1, c2 *netmodels.Channel) bool {
-						var c1f uint64
-						var c2f uint64
+						var c1f, c2f uint64
 						if c1.LocalPolicy != nil {
 							c1f = uint64(c1.LocalPolicy.FeeBaseMsat)
 						}
@@ -614,8 +471,7 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 				name:  fmt.Sprintf("%-8s", columns[i]),
 				sort: func(order models.Order) models.ChannelsSort {
 					return func(c1, c2 *netmodels.Channel) bool {
-						var c1f uint64
-						var c2f uint64
+						var c1f, c2f uint64
 						if c1.LocalPolicy != nil {
 							c1f = uint64(c1.LocalPolicy.FeeRateMilliMsat)
 						}
@@ -639,8 +495,7 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 				name:  fmt.Sprintf("%-7s", columns[i]),
 				sort: func(order models.Order) models.ChannelsSort {
 					return func(c1, c2 *netmodels.Channel) bool {
-						var c1f uint64
-						var c2f uint64
+						var c1f, c2f uint64
 						if c1.RemotePolicy != nil {
 							c1f = uint64(c1.RemotePolicy.FeeBaseMsat)
 						}
@@ -664,8 +519,7 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 				name:  fmt.Sprintf("%-7s", columns[i]),
 				sort: func(order models.Order) models.ChannelsSort {
 					return func(c1, c2 *netmodels.Channel) bool {
-						var c1f uint64
-						var c2f uint64
+						var c1f, c2f uint64
 						if c1.RemotePolicy != nil {
 							c1f = uint64(c1.RemotePolicy.FeeRateMilliMsat)
 						}
@@ -747,12 +601,10 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 					result := printer.Sprintf("%10s", FormatAge(c.Age))
 					if cfg.Options.GetOption("AGE", "color") == "color" {
 						return ColorizeAge(c.Age, result, opts...)
-					} else {
-						return color.White(opts...)(result)
 					}
+					return color.White(opts...)(result)
 				},
 			}
-
 		default:
 			channels.columns[i] = channelsColumn{
 				width: 21,

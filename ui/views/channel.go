@@ -2,150 +2,176 @@ package views
 
 import (
 	"fmt"
+	"strings"
 
-	"github.com/awesome-gocui/gocui"
-	"golang.org/x/text/language"
-	"golang.org/x/text/message"
+	"github.com/charmbracelet/lipgloss"
 
 	netmodels "github.com/hieblmi/lntop/network/models"
 	"github.com/hieblmi/lntop/ui/color"
 	"github.com/hieblmi/lntop/ui/models"
 )
 
-const (
-	CHANNEL        = "channel"
-	CHANNEL_HEADER = "channel_header"
-	CHANNEL_FOOTER = "channel_footer"
-)
+var sectionTitleStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#a78bfa")).
+	Bold(true)
+
+var detailLabelStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#6366f1"))
 
 type Channel struct {
-	view     *gocui.View
 	channels *models.Channels
+	Offset   int
 }
 
-func (c Channel) Name() string {
-	return CHANNEL
+func (c *Channel) Name() string { return CHANNEL }
+
+func (c *Channel) ScrollDown()  { c.Offset++ }
+func (c *Channel) ScrollUp()    { if c.Offset > 0 { c.Offset-- } }
+func (c *Channel) ScrollHome()  { c.Offset = 0 }
+
+func (c *Channel) PageDown(n int) { c.Offset += n }
+func (c *Channel) PageUp(n int) {
+	c.Offset -= n
+	if c.Offset < 0 {
+		c.Offset = 0
+	}
 }
 
-func (c Channel) Empty() bool {
-	return c.channels == nil
+func (c *Channel) Render(width, height int) string {
+	var b strings.Builder
+
+	// Header.
+	b.WriteString(DetailHeaderStyle.Width(width).Render("Channel"))
+	b.WriteString("\n")
+
+	// Build content lines.
+	lines := c.buildContent()
+
+	// Apply scroll offset and render visible lines.
+	dataHeight := height - 2 // header + footer
+	if c.Offset > len(lines)-dataHeight {
+		c.Offset = len(lines) - dataHeight
+	}
+	if c.Offset < 0 {
+		c.Offset = 0
+	}
+
+	end := c.Offset + dataHeight
+	if end > len(lines) {
+		end = len(lines)
+	}
+
+	for i := c.Offset; i < end; i++ {
+		b.WriteString(lines[i])
+		b.WriteString("\n")
+	}
+	for i := end - c.Offset; i < dataHeight; i++ {
+		b.WriteString("\n")
+	}
+
+	// Footer.
+	b.WriteString(renderFooter(width, "F2", "Menu", "Enter", "Channels", "C", "Get disabled", "F10", "Quit"))
+	return b.String()
 }
 
-func (c *Channel) Wrap(v *gocui.View) View {
-	c.view = v
-	return c
-}
+func (c *Channel) buildContent() []string {
+	channel := c.channels.Current()
 
-func (c Channel) Origin() (int, int) {
-	return c.view.Origin()
-}
+	var lines []string
+	add := func(format string, a ...interface{}) {
+		lines = append(lines, fmt.Sprintf(format, a...))
+	}
 
-func (c Channel) Cursor() (int, int) {
-	return c.view.Cursor()
-}
+	add("%s", sectionTitleStyle.Render(" Channel "))
+	add("%s %s", detailLabelStyle.Render("             Status:"), status(channel))
+	if channel.Status == netmodels.ChannelForceClosing {
+		add("%s %d blocks", detailLabelStyle.Render("         Matured in:"), channel.BlocksTilMaturity)
+	}
+	add("%s %d (%s)", detailLabelStyle.Render("                 ID:"), channel.ID, ToScid(channel.ID))
+	add("%s %s", detailLabelStyle.Render("           Capacity:"), formatAmount(channel.Capacity))
+	add("%s %s", detailLabelStyle.Render("      Local Balance:"), formatAmount(channel.LocalBalance))
+	add("%s %s", detailLabelStyle.Render("     Remote Balance:"), formatAmount(channel.RemoteBalance))
+	add("%s %s", detailLabelStyle.Render("      Channel Point:"), channel.ChannelPoint)
+	add("")
+	add("%s", sectionTitleStyle.Render(" Node "))
+	add("%s %s", detailLabelStyle.Render("         PubKey:"), channel.RemotePubKey)
 
-func (c Channel) Speed() (int, int, int, int) {
-	return 1, 1, 1, 1
-}
+	if channel.Node != nil {
+		alias, forced := channel.ShortAlias()
+		if forced {
+			alias = color.Cyan()(alias)
+		}
+		add("%s %s", detailLabelStyle.Render("          Alias:"), alias)
+		add("%s %s", detailLabelStyle.Render(" Total Capacity:"), formatAmount(channel.Node.TotalCapacity))
+		add("%s %d", detailLabelStyle.Render(" Total Channels:"), channel.Node.NumChannels)
 
-func (c Channel) Limits() (pageSize int, fullSize int) {
-	_, pageSize = c.view.Size()
-	fullSize = len(c.view.BufferLines()) - 1
-	return
-}
-
-func (c *Channel) SetCursor(x, y int) error {
-	return c.view.SetCursor(x, y)
-}
-
-func (c *Channel) SetOrigin(x, y int) error {
-	return c.view.SetOrigin(x, y)
-}
-
-func (c *Channel) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
-	header, err := g.SetView(CHANNEL_HEADER, x0-1, y0, x1+2, y0+2, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
+		if c.channels.CurrentNode != nil && c.channels.CurrentNode.PubKey == channel.RemotePubKey {
+			disabledOut, disabledIn := 0, 0
+			for _, ch := range c.channels.CurrentNode.Channels {
+				if ch.LocalPolicy != nil && ch.LocalPolicy.Disabled {
+					disabledOut++
+				}
+				if ch.RemotePolicy != nil && ch.RemotePolicy.Disabled {
+					disabledIn++
+				}
+			}
+			add("")
+			add(" %s %s", detailLabelStyle.Render("Disabled from node:"), formatDisabledCount(disabledOut, channel.Node.NumChannels))
+			add(" %s %s", detailLabelStyle.Render("Disabled to node:  "), formatDisabledCount(disabledIn, channel.Node.NumChannels))
 		}
 	}
-	header.Frame = false
-	header.BgColor = gocui.ColorGreen
-	header.FgColor = gocui.ColorBlack | gocui.AttrBold
-	header.Rewind()
-	_, _ = fmt.Fprintln(header, "Channel")
 
-	v, err := g.SetView(CHANNEL, x0-1, y0+1, x1+2, y1-1, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
+	if channel.LocalPolicy != nil {
+		lines = append(lines, policyLines(channel.LocalPolicy, true)...)
+	}
+	if channel.RemotePolicy != nil {
+		lines = append(lines, policyLines(channel.RemotePolicy, false)...)
+	}
+
+	if len(channel.PendingHTLC) > 0 {
+		add("")
+		add("%s", sectionTitleStyle.Render(" Pending HTLCs "))
+		for _, htlc := range channel.PendingHTLC {
+			add("%s %t", detailLabelStyle.Render("   Incoming:"), htlc.Incoming)
+			add("%s %s", detailLabelStyle.Render("     Amount:"), formatAmount(htlc.Amount))
+			add("%s %d", detailLabelStyle.Render(" Expiration:"), htlc.ExpirationHeight)
+			add("")
 		}
 	}
-	v.Frame = false
-	c.view = v
-	c.display()
 
-	footer, err := g.SetView(CHANNEL_FOOTER, x0-1, y1-2, x1, y1, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-	}
-	footer.Frame = false
-	footer.BgColor = gocui.ColorCyan
-	footer.FgColor = gocui.ColorBlack
-	footer.Rewind()
-	blackBg := color.Black(color.Background)
-	_, _ = fmt.Fprintf(footer, "%s%s %s%s %s%s %s%s\n",
-		blackBg("F2"), "Menu",
-		blackBg("Enter"), "Channels",
-		blackBg("C"), "Get disabled",
-		blackBg("F10"), "Quit",
-	)
-	return nil
+	return lines
 }
 
-func (c Channel) Delete(g *gocui.Gui) error {
-	err := g.DeleteView(CHANNEL_HEADER)
-	if err != nil {
-		return err
-	}
-
-	err = g.DeleteView(CHANNEL)
-	if err != nil {
-		return err
-	}
-
-	return g.DeleteView(CHANNEL_FOOTER)
-}
-
-func printPolicy(v *gocui.View, p *message.Printer, policy *netmodels.RoutingPolicy, outgoing bool) {
-	green := color.Green()
-	cyan := color.Cyan()
+func policyLines(policy *netmodels.RoutingPolicy, outgoing bool) []string {
 	red := color.Red()
-	_, _ = fmt.Fprintln(v, "")
+	dl := detailLabelStyle.Render
+
 	direction := "Outgoing"
 	if !outgoing {
 		direction = "Incoming"
 	}
-	_, _ = fmt.Fprintf(v, green(" [ %s Policy ]\n"), direction)
+
+	var lines []string
+	lines = append(lines, "")
+	lines = append(lines, sectionTitleStyle.Render(fmt.Sprintf(" %s Policy ", direction)))
 	if policy.Disabled {
-		_, _ = fmt.Fprintln(v, red("disabled"))
+		lines = append(lines, red("disabled"))
 	}
-	_, _ = fmt.Fprintf(v, "%s %d\n",
-		cyan("             Time lock delta:"), policy.TimeLockDelta)
-	_, _ = fmt.Fprintf(v, "%s %s\n",
-		cyan("             Min htlc (msat):"), formatAmount(policy.MinHtlc))
-	_, _ = fmt.Fprintf(v, "%s %s\n",
-		cyan("              Max htlc (sat):"), formatAmount(int64(policy.MaxHtlc/1000)))
-	_, _ = fmt.Fprintf(v, "%s %s\n",
-		cyan("               Fee base msat:"), formatAmount(policy.FeeBaseMsat))
-	_, _ = fmt.Fprintf(v, "%s %d\n",
-		cyan("         Fee rate milli msat:"), policy.FeeRateMilliMsat)
-	_, _ = fmt.Fprintf(v, "%s %d\n",
-		cyan("       Inbound fee base msat:"), policy.InboundFeeBaseMsat)
-	_, _ = fmt.Fprintf(v, "%s %d\n",
-		cyan(" Inbound fee rate milli msat:"), policy.InboundFeeRateMilliMsat)
+	lines = append(lines, fmt.Sprintf("%s %d",
+		dl("                           Time lock delta:"), policy.TimeLockDelta))
+	lines = append(lines, fmt.Sprintf("%s %s",
+		dl("             Min htlc (msat):"), formatAmount(policy.MinHtlc)))
+	lines = append(lines, fmt.Sprintf("%s %s",
+		dl("              Max htlc (sat):"), formatAmount(int64(policy.MaxHtlc/1000))))
+	lines = append(lines, fmt.Sprintf("%s %s",
+		dl("               Fee base msat:"), formatAmount(policy.FeeBaseMsat)))
+	lines = append(lines, fmt.Sprintf("%s %d",
+		dl("         Fee rate milli msat:"), policy.FeeRateMilliMsat))
+	lines = append(lines, fmt.Sprintf("%s %d",
+		dl("       Inbound fee base msat:"), policy.InboundFeeBaseMsat))
+	lines = append(lines, fmt.Sprintf("%s %d",
+		dl(" Inbound fee rate milli msat:"), policy.InboundFeeRateMilliMsat))
+	return lines
 }
 
 func formatAmount(amt int64) string {
@@ -179,87 +205,6 @@ func formatDisabledCount(cnt int, total uint32) string {
 		disabledStr = fmt.Sprintf("%4d", cnt)
 	}
 	return fmt.Sprintf("%s / %d (%d%%)", disabledStr, total, perc)
-}
-
-func (c *Channel) display() {
-	p := message.NewPrinter(language.English)
-	v := c.view
-	v.Clear()
-	channel := c.channels.Current()
-	green := color.Green()
-	cyan := color.Cyan()
-	_, _ = fmt.Fprintln(v, green(" [ Channel ]"))
-	_, _ = fmt.Fprintf(v, "%s %s\n",
-		cyan("             Status:"), status(channel))
-	if channel.Status == netmodels.ChannelForceClosing {
-		_, _ = fmt.Fprintf(v, "%s %d blocks\n",
-			cyan("         Matured in:"), channel.BlocksTilMaturity)
-	}
-	_, _ = fmt.Fprintf(v, "%s %d (%s)\n",
-		cyan("                 ID:"), channel.ID, ToScid(channel.ID))
-	_, _ = fmt.Fprintf(v, "%s %s\n",
-		cyan("           Capacity:"), formatAmount(channel.Capacity))
-	_, _ = fmt.Fprintf(v, "%s %s\n",
-		cyan("      Local Balance:"), formatAmount(channel.LocalBalance))
-	_, _ = fmt.Fprintf(v, "%s %s\n",
-		cyan("     Remote Balance:"), formatAmount(channel.RemoteBalance))
-	_, _ = fmt.Fprintf(v, "%s %s\n",
-		cyan("      Channel Point:"), channel.ChannelPoint)
-	_, _ = fmt.Fprintln(v, "")
-
-	_, _ = fmt.Fprintln(v, green(" [ Node ]"))
-	_, _ = fmt.Fprintf(v, "%s %s\n",
-		cyan("         PubKey:"), channel.RemotePubKey)
-	if channel.Node != nil {
-		alias, forced := channel.ShortAlias()
-		if forced {
-			alias = cyan(alias)
-		}
-		_, _ = fmt.Fprintf(v, "%s %s\n",
-			cyan("          Alias:"), alias)
-		_, _ = fmt.Fprintf(v, "%s %s\n",
-			cyan(" Total Capacity:"), formatAmount(channel.Node.TotalCapacity))
-		_, _ = fmt.Fprintf(v, "%s %d\n",
-			cyan(" Total Channels:"), channel.Node.NumChannels)
-
-		if c.channels.CurrentNode != nil && c.channels.CurrentNode.PubKey == channel.RemotePubKey {
-			disabledOut := 0
-			disabledIn := 0
-			for _, ch := range c.channels.CurrentNode.Channels {
-				if ch.LocalPolicy != nil && ch.LocalPolicy.Disabled {
-					disabledOut++
-				}
-				if ch.RemotePolicy != nil && ch.RemotePolicy.Disabled {
-					disabledIn++
-				}
-			}
-			_, _ = fmt.Fprintf(v, "\n %s %s\n", cyan("Disabled from node:"), formatDisabledCount(disabledOut, channel.Node.NumChannels))
-			_, _ = fmt.Fprintf(v, " %s %s\n", cyan("Disabled to node:  "), formatDisabledCount(disabledIn, channel.Node.NumChannels))
-		}
-	}
-
-	if channel.LocalPolicy != nil {
-		printPolicy(v, p, channel.LocalPolicy, true)
-	}
-
-	if channel.RemotePolicy != nil {
-		printPolicy(v, p, channel.RemotePolicy, false)
-	}
-
-	if len(channel.PendingHTLC) > 0 {
-		_, _ = fmt.Fprintln(v)
-		_, _ = fmt.Fprintln(v, green(" [ Pending HTLCs ]"))
-		for _, htlc := range channel.PendingHTLC {
-			_, _ = fmt.Fprintf(v, "%s %t\n",
-				cyan("   Incoming:"), htlc.Incoming)
-			_, _ = fmt.Fprintf(v, "%s %s\n",
-				cyan("     Amount:"), formatAmount(htlc.Amount))
-			_, _ = fmt.Fprintf(v, "%s %d\n",
-				cyan(" Expiration:"), htlc.ExpirationHeight)
-			_, _ = fmt.Fprintln(v)
-		}
-	}
-
 }
 
 func NewChannel(channels *models.Channels) *Channel {
