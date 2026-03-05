@@ -9,10 +9,10 @@ import (
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 
-	"github.com/edouardparis/lntop/config"
-	netmodels "github.com/edouardparis/lntop/network/models"
-	"github.com/edouardparis/lntop/ui/color"
-	"github.com/edouardparis/lntop/ui/models"
+	"github.com/hieblmi/lntop/config"
+	netmodels "github.com/hieblmi/lntop/network/models"
+	"github.com/hieblmi/lntop/ui/color"
+	"github.com/hieblmi/lntop/ui/models"
 )
 
 const (

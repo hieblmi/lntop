@@ -7,12 +7,12 @@ import (
 
 	cli "gopkg.in/urfave/cli.v2"
 
-	"github.com/edouardparis/lntop/app"
-	"github.com/edouardparis/lntop/config"
-	"github.com/edouardparis/lntop/events"
-	"github.com/edouardparis/lntop/logging"
-	"github.com/edouardparis/lntop/pubsub"
-	"github.com/edouardparis/lntop/ui"
+	"github.com/hieblmi/lntop/app"
+	"github.com/hieblmi/lntop/config"
+	"github.com/hieblmi/lntop/events"
+	"github.com/hieblmi/lntop/logging"
+	"github.com/hieblmi/lntop/pubsub"
+	"github.com/hieblmi/lntop/ui"
 )
 
 // New creates a new cli app.

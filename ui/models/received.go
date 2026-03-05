@@ -5,7 +5,7 @@ import (
 	"sort"
 	"sync"
 
-	netmodels "github.com/edouardparis/lntop/network/models"
+	netmodels "github.com/hieblmi/lntop/network/models"
 )
 
 type ReceivedSort func(*netmodels.Invoice, *netmodels.Invoice) bool

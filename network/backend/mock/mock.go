@@ -10,9 +10,9 @@ import (
 	"github.com/gofrs/uuid"
 	"github.com/pkg/errors"
 
-	"github.com/edouardparis/lntop/config"
-	"github.com/edouardparis/lntop/network/models"
-	"github.com/edouardparis/lntop/network/options"
+	"github.com/hieblmi/lntop/config"
+	"github.com/hieblmi/lntop/network/models"
+	"github.com/hieblmi/lntop/network/options"
 )
 
 type Backend struct {

@@ -3,8 +3,8 @@ package backend
 import (
 	"context"
 
-	"github.com/edouardparis/lntop/network/models"
-	"github.com/edouardparis/lntop/network/options"
+	"github.com/hieblmi/lntop/network/models"
+	"github.com/hieblmi/lntop/network/options"
 )
 
 type Backend interface {

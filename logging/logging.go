@@ -3,7 +3,7 @@ package logging
 import (
 	"time"
 
-	"github.com/edouardparis/lntop/config"
+	"github.com/hieblmi/lntop/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )

@@ -15,11 +15,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/edouardparis/lntop/config"
-	"github.com/edouardparis/lntop/logging"
-	"github.com/edouardparis/lntop/network/backend/pool"
-	"github.com/edouardparis/lntop/network/models"
-	"github.com/edouardparis/lntop/network/options"
+	"github.com/hieblmi/lntop/config"
+	"github.com/hieblmi/lntop/logging"
+	"github.com/hieblmi/lntop/network/backend/pool"
+	"github.com/hieblmi/lntop/network/models"
+	"github.com/hieblmi/lntop/network/options"
 )
 
 const (

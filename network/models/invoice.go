@@ -3,7 +3,7 @@ package models
 import (
 	"encoding/hex"
 
-	"github.com/edouardparis/lntop/logging"
+	"github.com/hieblmi/lntop/logging"
 )
 
 type ReceivedKind int

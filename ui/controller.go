@@ -6,12 +6,12 @@ import (
 
 	"github.com/awesome-gocui/gocui"
 
-	"github.com/edouardparis/lntop/app"
-	"github.com/edouardparis/lntop/events"
-	"github.com/edouardparis/lntop/logging"
-	"github.com/edouardparis/lntop/ui/cursor"
-	"github.com/edouardparis/lntop/ui/models"
-	"github.com/edouardparis/lntop/ui/views"
+	"github.com/hieblmi/lntop/app"
+	"github.com/hieblmi/lntop/events"
+	"github.com/hieblmi/lntop/logging"
+	"github.com/hieblmi/lntop/ui/cursor"
+	"github.com/hieblmi/lntop/ui/models"
+	"github.com/hieblmi/lntop/ui/views"
 )
 
 type controller struct {
