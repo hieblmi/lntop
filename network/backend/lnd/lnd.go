@@ -92,21 +92,20 @@ func (l Backend) SubscribeInvoice(ctx context.Context, channelInvoice chan *mode
 	}
 
 	for {
+		invoice, err := cltInvoices.Recv()
+		if err != nil {
+			st, ok := status.FromError(err)
+			if ok && st.Code() == codes.Canceled {
+				l.logger.Debug("stopping subscribe invoice: context canceled")
+				return nil
+			}
+			return err
+		}
+
 		select {
+		case channelInvoice <- lookupInvoiceProtoToInvoice(invoice):
 		case <-ctx.Done():
 			return nil
-		default:
-			invoice, err := cltInvoices.Recv()
-			if err != nil {
-				st, ok := status.FromError(err)
-				if ok && st.Code() == codes.Canceled {
-					l.logger.Debug("stopping subscribe invoice: context canceled")
-					return nil
-				}
-				return err
-			}
-
-			channelInvoice <- lookupInvoiceProtoToInvoice(invoice)
 		}
 	}
 }
@@ -124,21 +123,20 @@ func (l Backend) SubscribeTransactions(ctx context.Context, channel chan *models
 	}
 
 	for {
+		transaction, err := cltTransactions.Recv()
+		if err != nil {
+			st, ok := status.FromError(err)
+			if ok && st.Code() == codes.Canceled {
+				l.logger.Debug("stopping subscribe transactions: context canceled")
+				return nil
+			}
+			return err
+		}
+
 		select {
+		case channel <- protoToTransaction(transaction):
 		case <-ctx.Done():
 			return nil
-		default:
-			transaction, err := cltTransactions.Recv()
-			if err != nil {
-				st, ok := status.FromError(err)
-				if ok && st.Code() == codes.Canceled {
-					l.logger.Debug("stopping subscribe transactions: context canceled")
-					return nil
-				}
-				return err
-			}
-
-			channel <- protoToTransaction(transaction)
 		}
 	}
 }
@@ -156,23 +154,21 @@ func (l Backend) SubscribeChannels(ctx context.Context, events chan *models.Chan
 	}
 
 	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-			event, err := channelEvents.Recv()
-			if err != nil {
-				st, ok := status.FromError(err)
-				if ok && st.Code() == codes.Canceled {
-					l.logger.Debug("stopping subscribe channels: context canceled")
-					return nil
-				}
-				return err
+		event, err := channelEvents.Recv()
+		if err != nil {
+			st, ok := status.FromError(err)
+			if ok && st.Code() == codes.Canceled {
+				l.logger.Debug("stopping subscribe channels: context canceled")
+				return nil
 			}
-			if event.Type == lnrpc.ChannelEventUpdate_FULLY_RESOLVED_CHANNEL {
-				events <- &models.ChannelUpdate{}
+			return err
+		}
+		if event.Type == lnrpc.ChannelEventUpdate_FULLY_RESOLVED_CHANNEL {
+			select {
+			case events <- &models.ChannelUpdate{}:
+			case <-ctx.Done():
+				return nil
 			}
-
 		}
 	}
 }
@@ -200,25 +196,24 @@ func (l Backend) SubscribeGraphEvents(ctx context.Context, events chan *models.C
 	}
 
 	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-			event, err := graphEvents.Recv()
-			if err != nil {
-				st, ok := status.FromError(err)
-				if ok && st.Code() == codes.Canceled {
-					l.logger.Debug("stopping subscribe graph: context canceled")
-					return nil
-				}
-				return err
+		event, err := graphEvents.Recv()
+		if err != nil {
+			st, ok := status.FromError(err)
+			if ok && st.Code() == codes.Canceled {
+				l.logger.Debug("stopping subscribe graph: context canceled")
+				return nil
 			}
-			chanPoints := []string{}
-			for _, c := range event.ChannelUpdates {
-				chanPoints = append(chanPoints, chanpointToString(c.ChanPoint))
-			}
-			if len(chanPoints) > 0 {
-				events <- &models.ChannelEdgeUpdate{ChanPoints: chanPoints}
+			return err
+		}
+		chanPoints := []string{}
+		for _, c := range event.ChannelUpdates {
+			chanPoints = append(chanPoints, chanpointToString(c.ChanPoint))
+		}
+		if len(chanPoints) > 0 {
+			select {
+			case events <- &models.ChannelEdgeUpdate{ChanPoints: chanPoints}:
+			case <-ctx.Done():
+				return nil
 			}
 		}
 	}
@@ -237,21 +232,20 @@ func (l Backend) SubscribeRoutingEvents(ctx context.Context, channelEvents chan 
 	}
 
 	for {
+		event, err := cltRoutingEvents.Recv()
+		if err != nil {
+			st, ok := status.FromError(err)
+			if ok && st.Code() == codes.Canceled {
+				l.logger.Debug("stopping subscribe routing events: context canceled")
+				return nil
+			}
+			return err
+		}
+
 		select {
+		case channelEvents <- protoToRoutingEvent(event):
 		case <-ctx.Done():
 			return nil
-		default:
-			event, err := cltRoutingEvents.Recv()
-			if err != nil {
-				st, ok := status.FromError(err)
-				if ok && st.Code() == codes.Canceled {
-					l.logger.Debug("stopping subscribe routing events: context canceled")
-					return nil
-				}
-				return err
-			}
-
-			channelEvents <- protoToRoutingEvent(event)
 		}
 	}
 }
