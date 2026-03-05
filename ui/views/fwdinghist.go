@@ -235,7 +235,7 @@ func (c *FwdingHist) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
 	footer.FgColor = gocui.ColorBlack
 	footer.Rewind()
 	blackBg := color.Black(color.Background)
-	fmt.Fprintf(footer, "%s%s %s%s %s%s  Total: %d\n",
+	_, _ = fmt.Fprintf(footer, "%s%s %s%s %s%s  Total: %d\n",
 		blackBg("F2"), "Menu",
 		blackBg("Enter"), "FwdingHist",
 		blackBg("F10"), "Quit",
@@ -261,7 +261,7 @@ func (c *FwdingHist) display() {
 		buffer.WriteString(c.columns[i].name)
 		buffer.WriteString(" ")
 	}
-	fmt.Fprintln(c.columnHeadersView, buffer.String())
+	_, _ = fmt.Fprintln(c.columnHeadersView, buffer.String())
 
 	c.view.Rewind()
 	for _, item := range c.fwdinghist.List() {
@@ -274,7 +274,7 @@ func (c *FwdingHist) display() {
 			buffer.WriteString(c.columns[i].display(item, opt))
 			buffer.WriteString(" ")
 		}
-		fmt.Fprintln(c.view, buffer.String())
+		_, _ = fmt.Fprintln(c.view, buffer.String())
 	}
 }
 

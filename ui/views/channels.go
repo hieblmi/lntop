@@ -261,7 +261,7 @@ func (c *Channels) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
 	footer.FgColor = gocui.ColorBlack
 	footer.Rewind()
 	blackBg := color.Black(color.Background)
-	fmt.Fprintf(footer, "%s%s %s%s %s%s\n",
+	_, _ = fmt.Fprintf(footer, "%s%s %s%s %s%s\n",
 		blackBg("F2"), "Menu",
 		blackBg("Enter"), "Channel",
 		blackBg("F10"), "Quit",
@@ -286,7 +286,7 @@ func (c *Channels) display(g *gocui.Gui) {
 		buffer.WriteString(c.columns[i].name)
 		buffer.WriteString(" ")
 	}
-	fmt.Fprintln(c.columnHeadersView, buffer.String())
+	_, _ = fmt.Fprintln(c.columnHeadersView, buffer.String())
 
 	if len(c.columnViews) == 0 {
 		c.columnViews = make([]*gocui.View, len(c.columns))
@@ -316,7 +316,7 @@ func (c *Channels) display(g *gocui.Gui) {
 			if ci == 0 {
 				cc.Rewind()
 			}
-			fmt.Fprintln(cc, c.columns[i].display(item, opt), " ")
+			_, _ = fmt.Fprintln(cc, c.columns[i].display(item, opt), " ")
 			x0 += width + 1
 		}
 	}

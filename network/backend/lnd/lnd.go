@@ -60,7 +60,7 @@ func (l Backend) Ping() error {
 	if err != nil {
 		return err
 	}
-	defer clt.Close()
+	defer clt.Close() //nolint:errcheck
 	return nil
 }
 
@@ -69,7 +69,7 @@ func (l Backend) Info(ctx context.Context) (*models.Info, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer clt.Close()
+	defer clt.Close() //nolint:errcheck
 
 	resp, err := clt.GetInfo(ctx, &lnrpc.GetInfoRequest{})
 	if err != nil {
@@ -84,7 +84,7 @@ func (l Backend) SubscribeInvoice(ctx context.Context, channelInvoice chan *mode
 	if err != nil {
 		return err
 	}
-	defer clt.Close()
+	defer clt.Close() //nolint:errcheck
 
 	cltInvoices, err := clt.SubscribeInvoices(ctx, &lnrpc.InvoiceSubscription{})
 	if err != nil {
@@ -116,7 +116,7 @@ func (l Backend) SubscribeTransactions(ctx context.Context, channel chan *models
 	if err != nil {
 		return err
 	}
-	defer clt.Close()
+	defer clt.Close() //nolint:errcheck
 
 	cltTransactions, err := clt.SubscribeTransactions(ctx, &lnrpc.GetTransactionsRequest{})
 	if err != nil {
@@ -148,7 +148,7 @@ func (l Backend) SubscribeChannels(ctx context.Context, events chan *models.Chan
 	if err != nil {
 		return err
 	}
-	defer clt.Close()
+	defer clt.Close() //nolint:errcheck
 
 	channelEvents, err := clt.SubscribeChannelEvents(ctx, &lnrpc.ChannelEventSubscription{})
 	if err != nil {
@@ -192,7 +192,7 @@ func (l Backend) SubscribeGraphEvents(ctx context.Context, events chan *models.C
 	if err != nil {
 		return err
 	}
-	defer clt.Close()
+	defer clt.Close() //nolint:errcheck
 
 	graphEvents, err := clt.SubscribeChannelGraph(ctx, &lnrpc.GraphTopologySubscription{})
 	if err != nil {
@@ -229,7 +229,7 @@ func (l Backend) SubscribeRoutingEvents(ctx context.Context, channelEvents chan 
 	if err != nil {
 		return err
 	}
-	defer clt.Close()
+	defer clt.Close() //nolint:errcheck
 
 	cltRoutingEvents, err := clt.SubscribeHtlcEvents(ctx, &routerrpc.SubscribeHtlcEventsRequest{})
 	if err != nil {
@@ -290,7 +290,7 @@ func (l Backend) GetTransactions(ctx context.Context) ([]*models.Transaction, er
 	if err != nil {
 		return nil, err
 	}
-	defer clt.Close()
+	defer clt.Close() //nolint:errcheck
 
 	req := &lnrpc.GetTransactionsRequest{}
 	resp, err := clt.GetTransactions(ctx, req)
@@ -308,7 +308,7 @@ func (l Backend) GetWalletBalance(ctx context.Context) (*models.WalletBalance, e
 	if err != nil {
 		return nil, err
 	}
-	defer clt.Close()
+	defer clt.Close() //nolint:errcheck
 
 	req := &lnrpc.WalletBalanceRequest{}
 	resp, err := clt.WalletBalance(ctx, req)
@@ -330,7 +330,7 @@ func (l Backend) GetChannelsBalance(ctx context.Context) (*models.ChannelsBalanc
 	if err != nil {
 		return nil, err
 	}
-	defer clt.Close()
+	defer clt.Close() //nolint:errcheck
 
 	req := &lnrpc.ChannelBalanceRequest{}
 	resp, err := clt.ChannelBalance(ctx, req)
@@ -352,7 +352,7 @@ func (l Backend) ListChannels(ctx context.Context, opt ...options.Channel) ([]*m
 	if err != nil {
 		return nil, err
 	}
-	defer clt.Close()
+	defer clt.Close() //nolint:errcheck
 
 	opts := options.NewChannelOptions(opt...)
 	req := &lnrpc.ListChannelsRequest{
@@ -401,7 +401,7 @@ func (l Backend) GetChannelInfo(ctx context.Context, channel *models.Channel) er
 	if err != nil {
 		return err
 	}
-	defer clt.Close()
+	defer clt.Close() //nolint:errcheck
 
 	req := &lnrpc.ChanInfoRequest{ChanId: channel.ID}
 	resp, err := clt.GetChanInfo(ctx, req)
@@ -412,7 +412,7 @@ func (l Backend) GetChannelInfo(ctx context.Context, channel *models.Channel) er
 		return nil
 	}
 
-	t := time.Unix(int64(uint64(resp.LastUpdate)), 0)
+	t := time.Unix(int64(uint64(resp.LastUpdate)), 0) //nolint:staticcheck // deprecated but no replacement available
 	channel.LastUpdate = &t
 	channel.LocalPolicy = protoToRoutingPolicy(resp.Node1Policy)
 	channel.RemotePolicy = protoToRoutingPolicy(resp.Node2Policy)
@@ -435,7 +435,7 @@ func (l Backend) GetNode(ctx context.Context, pubkey string, includeChannels boo
 	if err != nil {
 		return nil, err
 	}
-	defer clt.Close()
+	defer clt.Close() //nolint:errcheck
 
 	req := &lnrpc.NodeInfoRequest{PubKey: pubkey, IncludeChannels: includeChannels}
 	resp, err := clt.GetNodeInfo(ctx, req)
@@ -456,8 +456,8 @@ func (l Backend) GetForwardingHistory(ctx context.Context, startTime string, max
 	if err != nil {
 		return nil, err
 	}
-	defer clt.Close()
-	t, err := parseTime(startTime, time.Now())
+	defer clt.Close() //nolint:errcheck
+	t, _ := parseTime(startTime, time.Now())
 	req := &lnrpc.ForwardingHistoryRequest{
 		StartTime:    t,
 		NumMaxEvents: maxNumEvents,
@@ -545,7 +545,7 @@ func (l Backend) CreateInvoice(ctx context.Context, amount int64, desc string) (
 	if err != nil {
 		return nil, err
 	}
-	defer clt.Close()
+	defer clt.Close() //nolint:errcheck
 
 	req := &lnrpc.Invoice{
 		Value:        amount,
@@ -573,7 +573,7 @@ func (l Backend) GetInvoice(ctx context.Context, RHash string) (*models.Invoice,
 	if err != nil {
 		return nil, err
 	}
-	defer clt.Close()
+	defer clt.Close() //nolint:errcheck
 
 	hashBytes, err := hex.DecodeString(RHash)
 	if err != nil {
@@ -602,7 +602,7 @@ func (l Backend) ListInvoices(ctx context.Context) ([]*models.Invoice, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer clt.Close()
+	defer clt.Close() //nolint:errcheck
 
 	req := &lnrpc.ListInvoiceRequest{NumMaxInvoices: 0}
 	resp, err := clt.ListInvoices(ctx, req)
@@ -626,11 +626,11 @@ func (l Backend) SendPayment(ctx context.Context, payreq *models.PayReq) (*model
 	if err != nil {
 		return nil, err
 	}
-	defer clt.Close()
+	defer clt.Close() //nolint:errcheck
 
 	req := &lnrpc.SendRequest{PaymentRequest: payreq.String}
 
-	resp, err := clt.SendPaymentSync(ctx, req)
+	resp, err := clt.SendPaymentSync(ctx, req) //nolint:staticcheck // deprecated but sufficient for lntop
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -648,7 +648,7 @@ func (l Backend) DecodePayReq(ctx context.Context, payreq string) (*models.PayRe
 	if err != nil {
 		return nil, err
 	}
-	defer clt.Close()
+	defer clt.Close() //nolint:errcheck
 
 	resp, err := clt.DecodePayReq(ctx, &lnrpc.PayReqString{PayReq: payreq})
 	if err != nil {

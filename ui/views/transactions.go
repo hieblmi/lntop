@@ -233,7 +233,7 @@ func (c *Transactions) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
 	footer.FgColor = gocui.ColorBlack
 	footer.Rewind()
 	blackBg := color.Black(color.Background)
-	fmt.Fprintf(footer, "%s%s %s%s %s%s\n",
+	_, _ = fmt.Fprintf(footer, "%s%s %s%s %s%s\n",
 		blackBg("F2"), "Menu",
 		blackBg("Enter"), "Transaction",
 		blackBg("F10"), "Quit",
@@ -258,7 +258,7 @@ func (c *Transactions) display() {
 		buffer.WriteString(c.columns[i].name)
 		buffer.WriteString(" ")
 	}
-	fmt.Fprintln(c.columnHeadersView, buffer.String())
+	_, _ = fmt.Fprintln(c.columnHeadersView, buffer.String())
 
 	c.view.Rewind()
 	for _, item := range c.transactions.List() {
@@ -271,7 +271,7 @@ func (c *Transactions) display() {
 			buffer.WriteString(c.columns[i].display(item, opt))
 			buffer.WriteString(" ")
 		}
-		fmt.Fprintln(c.view, buffer.String())
+		_, _ = fmt.Fprintln(c.view, buffer.String())
 	}
 }
 

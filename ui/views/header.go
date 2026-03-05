@@ -51,7 +51,7 @@ func (h *Header) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
 
 	v.Clear()
 	cyan := color.Cyan()
-	fmt.Fprintf(v, "%s %s %s %s %s %s %d %s %d\n",
+	_, _ = fmt.Fprintf(v, "%s %s %s %s %s %s %d %s %d\n",
 		color.Cyan(color.Background)(h.Info.Alias),
 		cyan("lnd-v"+version),
 		chain, network,

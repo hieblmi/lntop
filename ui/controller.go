@@ -310,7 +310,7 @@ func (c *controller) OnEnter(g *gocui.Gui, v *gocui.View) error {
 	case views.CHANNELS:
 		index := c.views.Channels.Index()
 		c.models.Channels.SetCurrent(index)
-		c.models.RefreshCurrentNode(ctx)
+		_ = c.models.RefreshCurrentNode(ctx)
 		c.views.Main = c.views.Channel
 		return ToggleView(g, view, c.views.Channel)
 
@@ -340,7 +340,7 @@ func (c *controller) NodeInfo(g *gocui.Gui, v *gocui.View) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
-	c.models.RefreshCurrentNode(ctx)
+	_ = c.models.RefreshCurrentNode(ctx)
 	return nil
 }
 

@@ -180,7 +180,7 @@ func (c *Received) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
 	footer.FgColor = gocui.ColorBlack
 	footer.Rewind()
 	blackBg := color.Black(color.Background)
-	fmt.Fprintf(footer, "%s%s %s%s  Invoices: %d\n",
+	_, _ = fmt.Fprintf(footer, "%s%s %s%s  Invoices: %d\n",
 		blackBg("F2"), "Menu",
 		blackBg("F10"), "Quit",
 		c.received.Len(),
@@ -205,7 +205,7 @@ func (c *Received) display() {
 		buffer.WriteString(c.columns[i].name)
 		buffer.WriteString(" ")
 	}
-	fmt.Fprintln(c.columnHeadersView, buffer.String())
+	_, _ = fmt.Fprintln(c.columnHeadersView, buffer.String())
 
 	c.view.Rewind()
 	for _, inv := range c.received.List() {
@@ -218,7 +218,7 @@ func (c *Received) display() {
 			b.WriteString(c.columns[i].display(inv, opt))
 			b.WriteString(" ")
 		}
-		fmt.Fprintln(c.view, b.String())
+		_, _ = fmt.Fprintln(c.view, b.String())
 	}
 }
 

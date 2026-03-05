@@ -152,7 +152,7 @@ func ColorizeAge(age uint32, text string, opts ...color.Option) string {
 		{60, 0.9, 0.6},
 		{22, 1, 0.5},
 	}
-	cur := [3]float64{}
+	var cur [3]float64
 	if age < 26298 {
 		cur = interp(ageColors[0], ageColors[1], float64(age)/26298)
 	} else if age < 52596 {

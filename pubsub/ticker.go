@@ -83,22 +83,3 @@ func withTickerChannelsBalance() tickerFunc {
 	}
 }
 
-// withTickerWalletBalance checks if wallet balance and pending balance
-// changed in the ticker interval.
-func withTickerWalletBalance() tickerFunc {
-	var old *models.WalletBalance
-	return func(ctx context.Context, logger logging.Logger, net *network.Network, sub chan *events.Event) {
-		walletBalance, err := net.GetWalletBalance(ctx)
-		if err != nil {
-			logger.Error("network wallet balance returned an error", logging.Error(err))
-		}
-		if old != nil && walletBalance != nil {
-			if old.TotalBalance != walletBalance.TotalBalance ||
-				old.ConfirmedBalance != walletBalance.ConfirmedBalance ||
-				old.UnconfirmedBalance != walletBalance.UnconfirmedBalance {
-				sub <- events.New(events.WalletBalanceUpdated)
-			}
-		}
-		old = walletBalance
-	}
-}

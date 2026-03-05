@@ -239,7 +239,7 @@ func (c *Routing) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
 	footer.FgColor = gocui.ColorBlack
 	footer.Rewind()
 	blackBg := color.Black(color.Background)
-	fmt.Fprintf(footer, "%s%s %s%s\n",
+	_, _ = fmt.Fprintf(footer, "%s%s %s%s\n",
 		blackBg("F2"), "Menu",
 		blackBg("F10"), "Quit",
 	)
@@ -259,7 +259,7 @@ func (c *Routing) display(g *gocui.Gui) {
 		buffer.WriteString(c.columns[i].name)
 		buffer.WriteString(" ")
 	}
-	fmt.Fprintln(c.columnHeadersView, buffer.String())
+	_, _ = fmt.Fprintln(c.columnHeadersView, buffer.String())
 
 	_, height := c.view.Size()
 	numEvents := len(c.routingEvents.Log)
@@ -298,7 +298,7 @@ func (c *Routing) display(g *gocui.Gui) {
 			if rewind {
 				cc.Rewind()
 			}
-			fmt.Fprintln(cc, c.columns[i].display(item, opt), " ")
+			_, _ = fmt.Fprintln(cc, c.columns[i].display(item, opt), " ")
 			x0 += width + 1
 		}
 		rewind = false

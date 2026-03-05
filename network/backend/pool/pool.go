@@ -56,7 +56,7 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 	if conn.ClientConn != nil &&
 		p.timeout > 0 &&
 		conn.usedAt.Add(p.timeout).Before(time.Now()) {
-		conn.ClientConn.Close()
+		_ = conn.ClientConn.Close()
 		conn.ClientConn = nil
 	}
 
@@ -89,7 +89,7 @@ func (p *Pool) Close() {
 		if client.ClientConn == nil {
 			continue
 		}
-		client.ClientConn.Close()
+		_ = client.ClientConn.Close()
 	}
 }
 
