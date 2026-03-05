@@ -2,7 +2,7 @@ package config
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"os"
 	"os/user"
@@ -98,7 +98,7 @@ func loadFromPath(path string, out interface{}) error {
 		return err
 	}
 
-	data, err := ioutil.ReadAll(f)
+	data, err := io.ReadAll(f)
 	if err != nil {
 		return err
 	}
@@ -119,7 +119,7 @@ func getAppDir() (string, error) {
 			if err != nil {
 				return "", err
 			}
-			err = ioutil.WriteFile(dir+"/config.toml",
+			err = os.WriteFile(dir+"/config.toml",
 				[]byte(DefaultFileContent()), 0644)
 			if err != nil {
 				return "", err

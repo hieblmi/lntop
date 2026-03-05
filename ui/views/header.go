@@ -39,8 +39,8 @@ func (h *Header) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
 		chain = h.Info.Chains[0]
 	}
 
-	network := "testnet"
-	if !h.Info.Testnet {
+	network := h.Info.Network
+	if network == "" {
 		network = "mainnet"
 	}
 

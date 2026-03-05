@@ -575,8 +575,13 @@ func (l Backend) GetInvoice(ctx context.Context, RHash string) (*models.Invoice,
 	}
 	defer clt.Close()
 
+	hashBytes, err := hex.DecodeString(RHash)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
 	req := &lnrpc.PaymentHash{
-		RHashStr: RHash,
+		RHash: hashBytes,
 	}
 
 	resp, err := clt.LookupInvoice(ctx, req)
