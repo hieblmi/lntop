@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/hieblmi/lntop/ui/models"
 )
@@ -14,9 +15,39 @@ var versionReg = regexp.MustCompile(`(\d+\.)?(\d+\.)?(\*|\d+)`)
 
 // headerStyle renders a full-width gradient bar for the header.
 var headerStyle = lipgloss.NewStyle().
-	Bold(true).
-	Foreground(lipgloss.Color("#ffffff")).
-	Background(lipgloss.Color("#5b37b7"))
+	Background(lipgloss.Color("#120c2c"))
+
+var (
+	headerAliasStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#ffffff")).
+				Background(lipgloss.Color("#7c3aed")).
+				Bold(true).
+				Padding(0, 1)
+
+	headerInfoStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#e0e7ff")).
+			Background(lipgloss.Color("#312e81")).
+			Bold(true).
+			Padding(0, 1)
+
+	headerSyncStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#6ee7b7")).
+			Background(lipgloss.Color("#064e3b")).
+			Bold(true).
+			Padding(0, 1)
+
+	headerSyncingStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#fde68a")).
+				Background(lipgloss.Color("#78350f")).
+				Bold(true).
+				Padding(0, 1)
+
+	headerMetaStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#c4b5fd")).
+			Background(lipgloss.Color("#1f1b4d")).
+			Bold(true).
+			Padding(0, 1)
+)
 
 type Header struct {
 	Info *models.Info
@@ -43,46 +74,29 @@ func (h *Header) Render(width int) string {
 		network = "mainnet"
 	}
 
-	syncLabel := " [syncing]"
-	syncStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#ffcc00")).
-		Background(lipgloss.Color("#5b37b7")).
-		Bold(true)
+	syncLabel := "syncing"
+	syncStyle := headerSyncingStyle
 	if h.Info.Synced {
-		syncLabel = " [synced]"
-		syncStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#00ff88")).
-			Background(lipgloss.Color("#5b37b7")).
-			Bold(true)
+		syncLabel = "synced"
+		syncStyle = headerSyncStyle
 	}
 
-	// Build the alias badge with a distinct background.
-	alias := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#ffffff")).
-		Background(lipgloss.Color("#7c3aed")).
-		Bold(true).
-		Padding(0, 1).
-		Render(h.Info.Alias)
-
-	labelStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#a78bfa")).
-		Background(lipgloss.Color("#5b37b7"))
-	valStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#e0e0e0")).
-		Background(lipgloss.Color("#5b37b7"))
-
-	content := fmt.Sprintf("%s %s %s %s%s %s%d %s%d",
-		alias,
-		valStyle.Render("lnd-v"+version),
-		valStyle.Render(chain+" "+network),
+	parts := []string{
+		headerAliasStyle.Render(h.Info.Alias),
+		headerInfoStyle.Render("lnd-v" + version),
+		headerInfoStyle.Render(chain + " " + network),
 		syncStyle.Render(syncLabel),
-		"",
-		labelStyle.Render(" height:"), h.Info.BlockHeight,
-		labelStyle.Render(" peers:"), h.Info.NumPeers,
-	)
+		headerMetaStyle.Render(fmt.Sprintf("height %d", h.Info.BlockHeight)),
+		headerMetaStyle.Render(fmt.Sprintf("peers %d", h.Info.NumPeers)),
+	}
+	content := strings.Join(parts, " ")
 
 	// Pad the header bar to full width.
 	vis := lipgloss.Width(content)
+	if vis > width {
+		content = ansi.Truncate(content, width, "")
+		vis = lipgloss.Width(content)
+	}
 	if vis < width {
 		content += strings.Repeat(" ", width-vis)
 	}

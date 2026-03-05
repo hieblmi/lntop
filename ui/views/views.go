@@ -57,8 +57,23 @@ func New(cfg config.Views, m *models.Models) *Views {
 // Shared styles.
 var (
 	HeaderBarStyle = lipgloss.NewStyle().
-			Background(lipgloss.Color("#1e1b4b")).
-			Foreground(lipgloss.Color("#a78bfa")).
+			Background(lipgloss.Color("#09097a"))
+
+	DefaultColStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("#09097a")).
+			Foreground(lipgloss.Color("#c4b5fd")).
+			Bold(true)
+
+	// ActiveColStyle highlights the column under the cursor in the header bar.
+	ActiveColStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("#09097a")).
+			Foreground(lipgloss.Color("#f5d0fe")).
+			Bold(true)
+
+	// SortedColStyle highlights the sorted column in the header bar.
+	SortedColStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("#09097a")).
+			Foreground(lipgloss.Color("#ddd6fe")).
 			Bold(true)
 
 	SelectedRowStyle = lipgloss.NewStyle().
@@ -105,6 +120,51 @@ func padRight(s string, w int) string {
 // truncRow truncates an ANSI-colored row string to fit within width.
 func truncRow(s string, width int) string {
 	return ansi.Truncate(s, width, "")
+}
+
+// safeRowWidth leaves a small right margin to avoid terminal autowrap.
+func safeRowWidth(width int) int {
+	w := width - 2
+	if w < 1 {
+		return 1
+	}
+	return w
+}
+
+// safeTruncRow truncates to a conservative width to avoid edge wrapping.
+func safeTruncRow(s string, width int) string {
+	return ansi.Truncate(s, safeRowWidth(width), "")
+}
+
+// fitCell ensures an ANSI-colored cell has exactly the requested visible width.
+func fitCell(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	cell := ansi.Truncate(s, width, "")
+	return padRight(cell, width)
+}
+
+func renderHeaderCell(label string, width int, style lipgloss.Style) string {
+	if width <= 0 {
+		return ""
+	}
+	text := ansi.Truncate(strings.TrimSpace(label), width, "")
+	return style.Width(width).Align(lipgloss.Center).Render(text)
+}
+
+// selectedRow renders a row with the selected highlight, stripping colors
+// and hard-truncating to prevent line wrapping.
+func selectedRow(line string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	rowWidth := safeRowWidth(width)
+
+	plain := stripAnsi(line)
+	plain = ansi.Truncate(plain, rowWidth, "")
+	plain = padRight(plain, rowWidth)
+	return SelectedRowStyle.Render(plain)
 }
 
 // renderFooter renders a footer bar with styled key binding hints.

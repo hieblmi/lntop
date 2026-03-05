@@ -35,11 +35,27 @@ type Received struct {
 	ColCursor int
 }
 
-func (c *Received) Name() string    { return RECEIVED }
-func (c *Received) CursorDown()     { if c.Cursor < c.received.Len()-1 { c.Cursor++ } }
-func (c *Received) CursorUp()       { if c.Cursor > 0 { c.Cursor-- } }
-func (c *Received) ColumnRight()    { if c.ColCursor < len(c.columns)-1 { c.ColCursor++ } }
-func (c *Received) ColumnLeft()     { if c.ColCursor > 0 { c.ColCursor-- } }
+func (c *Received) Name() string { return RECEIVED }
+func (c *Received) CursorDown() {
+	if c.Cursor < c.received.Len()-1 {
+		c.Cursor++
+	}
+}
+func (c *Received) CursorUp() {
+	if c.Cursor > 0 {
+		c.Cursor--
+	}
+}
+func (c *Received) ColumnRight() {
+	if c.ColCursor < len(c.columns)-1 {
+		c.ColCursor++
+	}
+}
+func (c *Received) ColumnLeft() {
+	if c.ColCursor > 0 {
+		c.ColCursor--
+	}
+}
 func (c *Received) Home()           { c.Cursor = 0 }
 func (c *Received) End()            { c.Cursor = max(0, c.received.Len()-1) }
 func (c *Received) PageDown(ps int) { c.Cursor = min(c.Cursor+ps, max(0, c.received.Len()-1)) }
@@ -64,16 +80,16 @@ func (c *Received) Render(width, height int) string {
 
 	var hdr strings.Builder
 	for i, col := range c.columns {
-		name := col.name
+		name := renderHeaderCell(col.name, col.width, DefaultColStyle)
 		if i == c.ColCursor {
-			name = color.Cyan(color.Background)(col.name)
+			name = renderHeaderCell(col.name, col.width, ActiveColStyle)
 		} else if col.sorted {
-			name = color.Magenta(color.Background)(col.name)
+			name = renderHeaderCell(col.name, col.width, SortedColStyle)
 		}
 		hdr.WriteString(name)
 		hdr.WriteString(" ")
 	}
-	b.WriteString(HeaderBarStyle.Width(width).Render(hdr.String()))
+	b.WriteString(HeaderBarStyle.Width(width).MaxWidth(width).Render(safeTruncRow(hdr.String(), width)))
 	b.WriteString("\n")
 
 	dataHeight := height - 2
@@ -97,14 +113,14 @@ func (c *Received) Render(width, height int) string {
 			if i == c.ColCursor {
 				opt = color.Bold
 			}
-			row.WriteString(col.display(item, opt))
+			row.WriteString(fitCell(col.display(item, opt), col.width))
 			row.WriteString(" ")
 		}
 		line := row.String()
 		if idx == c.Cursor {
-			line = SelectedRowStyle.Width(width).Render(stripAnsi(truncRow(line, width)))
+			line = selectedRow(line, width)
 		} else {
-			line = truncRow(line, width)
+			line = safeTruncRow(line, width)
 		}
 		b.WriteString(line)
 		b.WriteString("\n")

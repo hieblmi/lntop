@@ -112,16 +112,16 @@ func (c *Channels) Render(width, height int) string {
 	// Column header.
 	var hdr strings.Builder
 	for i, col := range c.columns {
-		name := col.name
+		name := renderHeaderCell(col.name, col.width, DefaultColStyle)
 		if i == c.ColCursor {
-			name = color.Cyan(color.Background)(col.name)
+			name = renderHeaderCell(col.name, col.width, ActiveColStyle)
 		} else if col.sorted {
-			name = color.Magenta(color.Background)(col.name)
+			name = renderHeaderCell(col.name, col.width, SortedColStyle)
 		}
 		hdr.WriteString(name)
 		hdr.WriteString(" ")
 	}
-	b.WriteString(HeaderBarStyle.Width(width).MaxWidth(width).Render(truncRow(hdr.String(), width)))
+	b.WriteString(HeaderBarStyle.Width(width).MaxWidth(width).Render(safeTruncRow(hdr.String(), width)))
 	b.WriteString("\n")
 
 	// Data rows.
@@ -154,14 +154,14 @@ func (c *Channels) Render(width, height int) string {
 			if i == c.ColCursor {
 				opt = color.Bold
 			}
-			row.WriteString(col.display(item, opt))
+			row.WriteString(fitCell(col.display(item, opt), col.width))
 			row.WriteString(" ")
 		}
 		line := row.String()
 		if idx == c.Cursor {
-			line = SelectedRowStyle.Width(width).Render(stripAnsi(truncRow(line, width)))
+			line = selectedRow(line, width)
 		} else {
-			line = truncRow(line, width)
+			line = safeTruncRow(line, width)
 		}
 		b.WriteString(line)
 		b.WriteString("\n")
