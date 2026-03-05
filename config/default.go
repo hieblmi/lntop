@@ -48,6 +48,8 @@ columns = [
 	"ID",          # the id of the channel
 	# "SCID",      # short channel id (BxTxO formatted)
 	# "NUPD",      # number of channel updates
+	# "INBOUND_BASE", # your inbound base fee in msat (LND 0.18+, negative = discount)
+	# "INBOUND_RATE", # your inbound fee rate in milli-msat (LND 0.18+, negative = discount)
 ]
 
 [views.channels.options]
@@ -56,6 +58,20 @@ columns = [
 # supported terminals
 
 # AGE = { color = "color" }
+
+[views.fwdinghist]
+columns = [
+	"ALIAS_IN",
+	"ALIAS_OUT",
+	"AMT_IN",
+	"AMT_OUT",
+	"FEE",
+	"TIMESTAMP_NS",
+	# "CHAN_ID_IN",
+	# "CHAN_ID_OUT",
+	# "INBOUND_BASE_IN",  # your inbound base fee on the incoming channel (LND 0.18+)
+	# "INBOUND_RATE_IN",  # your inbound fee rate on the incoming channel (LND 0.18+)
+]
 
 [views.fwdinghist.options]
 # The forwarding history options determine how many forwarding events the 
@@ -83,6 +99,8 @@ columns = [
 	"STATUS",         # one of: active, settled, failed, linkfail
 	"IN_CHANNEL",     # channel id of the incomming channel
 	"IN_ALIAS",       # incoming channel node alias
+	# "INBOUND_BASE_IN",  # your inbound base fee on the incoming channel (LND 0.18+)
+	# "INBOUND_RATE_IN",  # your inbound fee rate on the incoming channel (LND 0.18+)
 	# "IN_SCID",      # incoming short channel id (BxTxO)
 	# "IN_HTLC",      # htlc id on incoming channel
 	# "IN_TIMELOCK",  # incoming timelock height

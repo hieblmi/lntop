@@ -460,6 +460,22 @@ func NewRouting(cfg *config.View, routingEvents *models.RoutingLog, channels *mo
 					)
 				},
 			}
+		case "INBOUND_BASE_IN":
+			routing.columns[i] = routingColumn{
+				width: 14,
+				name:  fmt.Sprintf("%14s", columns[i]),
+				display: rinboundFee(channels, func(p *netmodels.RoutingPolicy) int32 {
+					return p.InboundFeeBaseMsat
+				}),
+			}
+		case "INBOUND_RATE_IN":
+			routing.columns[i] = routingColumn{
+				width: 14,
+				name:  fmt.Sprintf("%14s", columns[i]),
+				display: rinboundFee(channels, func(p *netmodels.RoutingPolicy) int32 {
+					return p.InboundFeeRateMilliMsat
+				}),
+			}
 		case "DETAIL":
 			routing.columns[i] = routingColumn{
 				width: 80,
@@ -506,6 +522,20 @@ func rdirection(c *netmodels.RoutingEvent, opts ...color.Option) string {
 		return color.White(opts...)(fmt.Sprintf("%-4s", "forw"))
 	}
 	return "   "
+}
+
+func rinboundFee(channels *models.Channels, extract func(*netmodels.RoutingPolicy) int32) func(*netmodels.RoutingEvent, ...color.Option) string {
+	return func(c *netmodels.RoutingEvent, opts ...color.Option) string {
+		if c.IncomingChannelId == 0 {
+			return fmt.Sprintf("%14s", "")
+		}
+		for _, ch := range channels.List() {
+			if ch.ID == c.IncomingChannelId && ch.LocalPolicy != nil {
+				return color.White(opts...)(fmt.Sprintf("%14d", extract(ch.LocalPolicy)))
+			}
+		}
+		return fmt.Sprintf("%14d", 0)
+	}
 }
 
 func ralias(channels *models.Channels, out bool) func(*netmodels.RoutingEvent, ...color.Option) string {
