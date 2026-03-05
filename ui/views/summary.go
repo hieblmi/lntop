@@ -64,12 +64,29 @@ func (s *Summary) display() {
 		green(p.Sprintf("%s", formatAmount(s.channelsBalance.Balance))),
 		yellow(p.Sprintf("%s", formatAmount(s.channelsBalance.PendingOpenBalance))),
 	))
+	// Count channels with disabled routing policies.
+	disabledLocal, disabledRemote := 0, 0
+	for _, ch := range s.channels.List() {
+		if ch.LocalPolicy != nil && ch.LocalPolicy.Disabled {
+			disabledLocal++
+		}
+		if ch.RemotePolicy != nil && ch.RemotePolicy.Disabled {
+			disabledRemote++
+		}
+	}
 	fmt.Fprintf(s.left, "%s %d %s %d %s %d %s\n",
 		cyan("state  :"),
 		s.info.NumActiveChannels, green("on"),
 		s.info.NumPendingChannels, yellow("pending"),
 		s.info.NumInactiveChannels, red("off"),
 	)
+	if disabledLocal > 0 || disabledRemote > 0 {
+		fmt.Fprintf(s.left, "%s %d %s %d %s\n",
+			cyan("disabled:"),
+			disabledLocal, red("local⇈"),
+			disabledRemote, red("remote⇊"),
+		)
+	}
 	fmt.Fprintf(s.left, "%s %s\n",
 		cyan("gauge  :"),
 		gaugeTotal(s.channelsBalance.Balance, s.channels.List()),
