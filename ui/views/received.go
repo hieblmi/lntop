@@ -180,9 +180,10 @@ func (c *Received) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
 	footer.FgColor = gocui.ColorBlack
 	footer.Rewind()
 	blackBg := color.Black(color.Background)
-	fmt.Fprintf(footer, "%s%s %s%s\n",
+	fmt.Fprintf(footer, "%s%s %s%s  Invoices: %d\n",
 		blackBg("F2"), "Menu",
 		blackBg("F10"), "Quit",
+		c.received.Len(),
 	)
 	return nil
 }
