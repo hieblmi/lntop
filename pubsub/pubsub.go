@@ -39,14 +39,16 @@ func (p *PubSub) invoices(ctx context.Context, sub chan *events.Event) {
 				logging.Object("invoice", invoice),
 			)
 
+			var event *events.Event
 			if invoice.Settled {
-				sub <- events.NewWithData(
-					events.InvoiceSettled, invoice,
-				)
+				event = events.NewWithData(events.InvoiceSettled, invoice)
 			} else {
-				sub <- events.NewWithData(
-					events.InvoiceCreated, invoice,
-				)
+				event = events.NewWithData(events.InvoiceCreated, invoice)
+			}
+			select {
+			case sub <- event:
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()
@@ -57,8 +59,6 @@ func (p *PubSub) invoices(ctx context.Context, sub chan *events.Event) {
 		if err != nil {
 			p.logger.Error("SubscribeInvoice returned an error", logging.Error(err))
 		}
-		// Close the data channel after the network subscription ends,
-		// so the consumer goroutine drains remaining items and exits.
 		close(invoices)
 		cancel()
 	}()
@@ -73,7 +73,11 @@ func (p *PubSub) transactions(ctx context.Context, sub chan *events.Event) {
 		defer p.wg.Done()
 		for tx := range transactions {
 			p.logger.Debug("receive transaction", logging.String("tx_hash", tx.TxHash))
-			sub <- events.New(events.TransactionCreated)
+			select {
+			case sub <- events.New(events.TransactionCreated):
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
 
@@ -98,7 +102,11 @@ func (p *PubSub) routingUpdates(ctx context.Context, sub chan *events.Event) {
 		for hu := range routingUpdates {
 			p.logger.Debug("receive htlcUpdate")
 			if !hu.IsEmpty() {
-				sub <- events.NewWithData(events.RoutingEventUpdated, hu)
+				select {
+				case sub <- events.NewWithData(events.RoutingEventUpdated, hu):
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}()
@@ -123,7 +131,11 @@ func (p *PubSub) graphUpdates(ctx context.Context, sub chan *events.Event) {
 		defer p.wg.Done()
 		for gu := range graphUpdates {
 			p.logger.Debug("receive graph update")
-			sub <- events.NewWithData(events.GraphUpdated, gu)
+			select {
+			case sub <- events.NewWithData(events.GraphUpdated, gu):
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
 
@@ -147,7 +159,11 @@ func (p *PubSub) channels(ctx context.Context, sub chan *events.Event) {
 		defer p.wg.Done()
 		for range channels {
 			p.logger.Debug("channels updated")
-			sub <- events.New(events.ChannelActive)
+			select {
+			case sub <- events.New(events.ChannelActive):
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
 

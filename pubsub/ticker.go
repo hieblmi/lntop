@@ -16,11 +16,11 @@ func (p *PubSub) ticker(ctx context.Context, sub chan *events.Event, fn ...ticke
 	p.wg.Add(1)
 	ticker := time.NewTicker(3 * time.Second)
 	go func() {
+		defer p.wg.Done()
+		defer ticker.Stop()
 		for {
 			select {
-			case <-p.stop:
-				ticker.Stop()
-				p.wg.Done()
+			case <-ctx.Done():
 				return
 			case <-ticker.C:
 				for i := range fn {
@@ -41,23 +41,43 @@ func withTickerInfo() tickerFunc {
 		}
 		if old != nil && info != nil {
 			if old.BlockHeight != info.BlockHeight {
-				sub <- events.New(events.BlockReceived)
+				select {
+				case sub <- events.New(events.BlockReceived):
+				case <-ctx.Done():
+					return
+				}
 			}
 
 			if old.NumPeers != info.NumPeers {
-				sub <- events.New(events.PeerUpdated)
+				select {
+				case sub <- events.New(events.PeerUpdated):
+				case <-ctx.Done():
+					return
+				}
 			}
 
 			if old.NumPendingChannels < info.NumPendingChannels {
-				sub <- events.New(events.ChannelPending)
+				select {
+				case sub <- events.New(events.ChannelPending):
+				case <-ctx.Done():
+					return
+				}
 			}
 
 			if old.NumActiveChannels < info.NumActiveChannels {
-				sub <- events.New(events.ChannelActive)
+				select {
+				case sub <- events.New(events.ChannelActive):
+				case <-ctx.Done():
+					return
+				}
 			}
 
 			if old.NumInactiveChannels < info.NumInactiveChannels {
-				sub <- events.New(events.ChannelInactive)
+				select {
+				case sub <- events.New(events.ChannelInactive):
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 		old = info
@@ -76,7 +96,11 @@ func withTickerChannelsBalance() tickerFunc {
 		if old != nil && channelsBalance != nil {
 			if old.Balance != channelsBalance.Balance ||
 				old.PendingOpenBalance != channelsBalance.PendingOpenBalance {
-				sub <- events.New(events.ChannelBalanceUpdated)
+				select {
+				case sub <- events.New(events.ChannelBalanceUpdated):
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 		old = channelsBalance
