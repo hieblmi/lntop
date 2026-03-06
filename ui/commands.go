@@ -72,6 +72,15 @@ func loadCurrentNodeCmd(net *network.Network, pubkey string) tea.Cmd {
 	}
 }
 
+func loadReceivedCmd(net *network.Network) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		invoices, err := net.ListInvoices(ctx)
+		return receivedLoadedMsg{invoices: invoices, err: err}
+	}
+}
+
 func loadChannelsCmd(net *network.Network, logger logging.Logger, blockHeight uint32, snapshot map[string]channelSnapshot) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

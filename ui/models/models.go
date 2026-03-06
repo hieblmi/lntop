@@ -235,6 +235,15 @@ func (m *Models) ApplyForwardingHistory(events []*models.ForwardingEvent) {
 	m.FwdingHist.Update(events)
 }
 
+func (m *Models) ApplyReceived(invoices []*models.Invoice) {
+	for _, inv := range invoices {
+		if inv == nil || !inv.Settled {
+			continue
+		}
+		m.Received.Add(inv)
+	}
+}
+
 func (m *Models) ApplyChannels(channels []*models.Channel) {
 	index := map[string]*models.Channel{}
 	for i := range channels {

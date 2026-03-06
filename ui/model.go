@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -37,7 +38,26 @@ type model struct {
 	transactionsLoading    bool
 	forwardingHistLoading  bool
 	channelsLoading        bool
+	receivedLoading        bool
 	currentNodeLoading     bool
+
+	startupActive    bool
+	startupFinishing bool
+	startupTasks     map[string]bool
+	startupWaiting   string
+}
+
+var startupTaskLabels = []struct {
+	key   string
+	label string
+}{
+	{"info", "Node info"},
+	{"wallet", "Wallet balance"},
+	{"channels_balance", "Channel balances"},
+	{"transactions", "Transactions"},
+	{"forwarding", "Forwarding history"},
+	{"received", "Received invoices"},
+	{"channels", "Channels"},
 }
 
 func newModel(a *app.App, sub chan *events.Event) *model {
@@ -53,15 +73,35 @@ func newModel(a *app.App, sub chan *events.Event) *model {
 }
 
 func (m *model) Init() tea.Cmd {
-	// Load initial data.
-	ctx := context.Background()
-	m.loadInitialData(ctx)
-	return tea.Batch(waitForEvent(m.sub), m.ensurePulseTick())
+	m.startInitialLoad()
+	return tea.Batch(
+		waitForEvent(m.sub),
+		m.ensurePulseTick(),
+		m.loadInfoCmd(),
+		m.loadWalletBalanceCmd(),
+		m.loadChannelsBalanceCmd(),
+		m.loadTransactionsCmd(),
+		m.loadForwardingHistoryCmd(),
+		m.loadReceivedCmd(),
+		m.loadChannelsCmd(),
+	)
 }
 
 func pulseTickCmd() tea.Cmd {
 	return tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg {
 		return pulseTickMsg{}
+	})
+}
+
+func startupCompleteCmd() tea.Cmd {
+	return tea.Tick(150*time.Millisecond, func(time.Time) tea.Msg {
+		return startupCompleteMsg{}
+	})
+}
+
+func startupRetryCmd(task string) tea.Cmd {
+	return tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg {
+		return startupRetryMsg{task: task}
 	})
 }
 
@@ -111,59 +151,96 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pulseActive = false
 		return m, nil
 
+	case startupCompleteMsg:
+		if m.startupFinishing && !m.hasStartupLoadsInFlight() && len(m.startupTasks) == 0 {
+			m.startupActive = false
+			m.startupFinishing = false
+			m.startupWaiting = ""
+		}
+		return m, nil
+
+	case startupRetryMsg:
+		if !m.startupActive || !m.startupTasks[msg.task] {
+			return m, nil
+		}
+		return m, m.startupRetryTaskCmd(msg.task)
+
 	case infoLoadedMsg:
 		m.infoLoading = false
 		if msg.err != nil {
+			m.startupWaiting = "Retrying Node info"
 			m.logger.Error("refresh info failed", logging.Error(msg.err))
-			return m, nil
+			return m, startupRetryCmd("info")
 		}
 		m.models.ApplyInfo(msg.info)
-		return m, m.ensurePulseTick()
+		m.finishStartupTask("info")
+		return m, tea.Batch(m.ensurePulseTick(), m.refreshChannelAgesIfNeeded(), m.completeStartupCmdIfReady())
 
 	case walletBalanceLoadedMsg:
 		m.walletBalanceLoading = false
 		if msg.err != nil {
+			m.startupWaiting = "Retrying Wallet balance"
 			m.logger.Error("refresh wallet balance failed", logging.Error(msg.err))
-			return m, nil
+			return m, startupRetryCmd("wallet")
 		}
 		m.models.ApplyWalletBalance(msg.balance)
-		return m, nil
+		m.finishStartupTask("wallet")
+		return m, m.completeStartupCmdIfReady()
 
 	case channelsBalanceLoadedMsg:
 		m.channelsBalanceLoading = false
 		if msg.err != nil {
+			m.startupWaiting = "Retrying Channel balances"
 			m.logger.Error("refresh channels balance failed", logging.Error(msg.err))
-			return m, nil
+			return m, startupRetryCmd("channels_balance")
 		}
 		m.models.ApplyChannelsBalance(msg.balance)
-		return m, nil
+		m.finishStartupTask("channels_balance")
+		return m, m.completeStartupCmdIfReady()
 
 	case transactionsLoadedMsg:
 		m.transactionsLoading = false
 		if msg.err != nil {
+			m.startupWaiting = "Retrying Transactions"
 			m.logger.Error("refresh transactions failed", logging.Error(msg.err))
-			return m, nil
+			return m, startupRetryCmd("transactions")
 		}
 		m.models.ApplyTransactions(msg.transactions)
-		return m, nil
+		m.finishStartupTask("transactions")
+		return m, m.completeStartupCmdIfReady()
 
 	case forwardingHistoryLoadedMsg:
 		m.forwardingHistLoading = false
 		if msg.err != nil {
+			m.startupWaiting = "Retrying Forwarding history"
 			m.logger.Error("refresh forwarding history failed", logging.Error(msg.err))
-			return m, nil
+			return m, startupRetryCmd("forwarding")
 		}
 		m.models.ApplyForwardingHistory(msg.events)
-		return m, nil
+		m.finishStartupTask("forwarding")
+		return m, m.completeStartupCmdIfReady()
 
 	case channelsLoadedMsg:
 		m.channelsLoading = false
 		if msg.err != nil {
+			m.startupWaiting = "Retrying Channels"
 			m.logger.Error("refresh channels failed", logging.Error(msg.err))
-			return m, nil
+			return m, startupRetryCmd("channels")
 		}
 		m.models.ApplyChannels(msg.channels)
-		return m, nil
+		m.finishStartupTask("channels")
+		return m, m.completeStartupCmdIfReady()
+
+	case receivedLoadedMsg:
+		m.receivedLoading = false
+		if msg.err != nil {
+			m.startupWaiting = "Retrying Received invoices"
+			m.logger.Error("refresh received failed", logging.Error(msg.err))
+			return m, startupRetryCmd("received")
+		}
+		m.models.ApplyReceived(msg.invoices)
+		m.finishStartupTask("received")
+		return m, m.completeStartupCmdIfReady()
 
 	case currentNodeLoadedMsg:
 		m.currentNodeLoading = false
@@ -533,6 +610,10 @@ func (m *model) View() string {
 		return "Loading..."
 	}
 
+	if m.startupActive {
+		return m.renderStartupView()
+	}
+
 	renderW := m.renderWidth()
 	m.views.Channels.SetPulseFrame(m.pulseFrame)
 
@@ -655,12 +736,24 @@ func (m *model) loadForwardingHistoryCmd() tea.Cmd {
 	return loadForwardingHistoryCmd(m.app.Network, m.models.FwdingHist.StartTime, m.models.FwdingHist.MaxNumEvents)
 }
 
-func (m *model) loadChannelsCmd() tea.Cmd {
-	if m.channelsLoading || m.models.Info == nil || m.models.Info.Info == nil {
+func (m *model) loadReceivedCmd() tea.Cmd {
+	if m.receivedLoading {
 		return nil
 	}
+	m.receivedLoading = true
+	return loadReceivedCmd(m.app.Network)
+}
+
+func (m *model) loadChannelsCmd() tea.Cmd {
+	if m.channelsLoading {
+		return nil
+	}
+	var blockHeight uint32
+	if m.models.Info != nil && m.models.Info.Info != nil {
+		blockHeight = m.models.Info.BlockHeight
+	}
 	m.channelsLoading = true
-	return loadChannelsCmd(m.app.Network, m.logger, m.models.Info.BlockHeight, m.channelSnapshot())
+	return loadChannelsCmd(m.app.Network, m.logger, blockHeight, m.channelSnapshot())
 }
 
 func (m *model) loadCurrentNodeCmd(pubkey string) tea.Cmd {
@@ -682,6 +775,174 @@ func (m *model) channelSnapshot() map[string]channelSnapshot {
 		}
 	}
 	return snapshot
+}
+
+func (m *model) refreshChannelAgesIfNeeded() tea.Cmd {
+	if m.channelsLoading || m.models.Info == nil || m.models.Info.Info == nil {
+		return nil
+	}
+	for _, ch := range m.models.Channels.List() {
+		if ch.ID > 0 && ch.Age == 0 {
+			return m.loadChannelsCmd()
+		}
+	}
+	return nil
+}
+
+func (m *model) startInitialLoad() {
+	m.startupActive = true
+	m.startupFinishing = false
+	m.startupTasks = make(map[string]bool, len(startupTaskLabels))
+	for _, task := range startupTaskLabels {
+		m.startupTasks[task.key] = true
+	}
+}
+
+func (m *model) finishStartupTask(key string) {
+	if !m.startupActive || m.startupTasks == nil {
+		return
+	}
+	delete(m.startupTasks, key)
+	if len(m.startupTasks) > 0 {
+		m.startupWaiting = ""
+	}
+	if len(m.startupTasks) == 0 && !m.hasStartupLoadsInFlight() {
+		m.startupFinishing = true
+	}
+}
+
+func (m *model) hasStartupLoadsInFlight() bool {
+	return m.infoLoading ||
+		m.walletBalanceLoading ||
+		m.channelsBalanceLoading ||
+		m.transactionsLoading ||
+		m.forwardingHistLoading ||
+		m.channelsLoading ||
+		m.receivedLoading
+}
+
+func (m *model) completeStartupCmdIfReady() tea.Cmd {
+	if !m.startupFinishing || m.hasStartupLoadsInFlight() || len(m.startupTasks) != 0 {
+		return nil
+	}
+	return startupCompleteCmd()
+}
+
+func (m *model) startupRetryTaskCmd(task string) tea.Cmd {
+	switch task {
+	case "info":
+		return m.loadInfoCmd()
+	case "wallet":
+		return m.loadWalletBalanceCmd()
+	case "channels_balance":
+		return m.loadChannelsBalanceCmd()
+	case "transactions":
+		return m.loadTransactionsCmd()
+	case "forwarding":
+		return m.loadForwardingHistoryCmd()
+	case "received":
+		return m.loadReceivedCmd()
+	case "channels":
+		return m.loadChannelsCmd()
+	default:
+		return nil
+	}
+}
+
+func (m *model) renderStartupView() string {
+	renderW := m.renderWidth()
+	progressW := renderW / 2
+	if progressW < 16 {
+		progressW = 16
+	}
+	if progressW > 40 {
+		progressW = 40
+	}
+	titleStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("#120c2c")).
+		Foreground(lipgloss.Color("#ffffff")).
+		Bold(true)
+	sectionStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#a78bfa")).
+		Bold(true)
+	labelStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#6366f1"))
+	doneStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e"))
+	pendingStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#333333"))
+
+	total := len(startupTaskLabels)
+	remaining := len(m.startupTasks)
+	completed := total - remaining
+	filled := 0
+	if total > 0 {
+		filled = progressW * completed / total
+	}
+
+	var bar strings.Builder
+	for i := 0; i < progressW; i++ {
+		if i < filled {
+			bar.WriteString(doneStyle.Render("\u2588"))
+		} else {
+			bar.WriteString(pendingStyle.Render("\u2591"))
+		}
+	}
+
+	waiting := "Finalizing"
+	if m.startupWaiting != "" {
+		waiting = m.startupWaiting
+	} else {
+		for _, task := range startupTaskLabels {
+			if m.startupTasks[task.key] {
+				waiting = task.label
+				break
+			}
+		}
+	}
+
+	var body []string
+	body = append(body, titleStyle.Align(lipgloss.Center).Width(renderW).Render(" Starting lntop "))
+	body = append(body, "")
+	body = append(body, lipgloss.NewStyle().Align(lipgloss.Center).Width(renderW).Render(sectionStyle.Render(" Initial Load ")))
+	body = append(body, lipgloss.NewStyle().Align(lipgloss.Center).Width(renderW).Render(
+		fmt.Sprintf("%s %d/%d", labelStyle.Render("Completed:"), completed, total),
+	))
+	body = append(body, lipgloss.NewStyle().Align(lipgloss.Center).Width(renderW).Render(
+		fmt.Sprintf("%s %s", labelStyle.Render("Waiting for:"), waiting),
+	))
+	body = append(body, lipgloss.NewStyle().Align(lipgloss.Center).Width(renderW).Render(fmt.Sprintf("[%s]", bar.String())))
+
+	for _, task := range startupTaskLabels {
+		status := pendingStyle.Render("\u25cb")
+		if !m.startupTasks[task.key] {
+			status = doneStyle.Render("\u25cf")
+		}
+		body = append(body, lipgloss.NewStyle().Align(lipgloss.Center).Width(renderW).Render(
+			fmt.Sprintf("%s %s", status, task.label),
+		))
+	}
+
+	topPad := 0
+	if m.height > len(body) {
+		topPad = (m.height - len(body)) / 2
+	}
+	lines := make([]string, 0, m.height)
+	for i := 0; i < topPad; i++ {
+		lines = append(lines, "")
+	}
+	lines = append(lines, body...)
+	for len(lines) < m.height {
+		lines = append(lines, "")
+	}
+
+	for i := range lines {
+		lines[i] = ansi.Truncate(lines[i], renderW, "")
+		vis := lipgloss.Width(lines[i])
+		if vis < renderW {
+			lines[i] += strings.Repeat(" ", renderW-vis)
+		}
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func (m *model) currentTableView() string {

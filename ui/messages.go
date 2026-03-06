@@ -42,8 +42,19 @@ type channelsLoadedMsg struct {
 	err      error
 }
 
+type receivedLoadedMsg struct {
+	invoices []*netmodels.Invoice
+	err      error
+}
+
 type currentNodeLoadedMsg struct {
 	pubkey string
 	node   *netmodels.Node
 	err    error
+}
+
+type startupCompleteMsg struct{}
+
+type startupRetryMsg struct {
+	task string
 }
