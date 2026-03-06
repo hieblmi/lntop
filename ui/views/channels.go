@@ -3,6 +3,7 @@ package views
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/text/language"
@@ -29,12 +30,18 @@ type channelsColumn struct {
 }
 
 type Channels struct {
-	cfg       *config.View
-	columns   []channelsColumn
-	channels  *models.Channels
-	Cursor    int
-	Offset    int
-	ColCursor int
+	cfg            *config.View
+	columns        []channelsColumn
+	channels       *models.Channels
+	Cursor         int
+	Offset         int
+	ColCursor      int
+	pulseFrame     int
+	lastPulseFrame int
+	prevHTLC       map[string]int
+	prevUnsettled  map[string]int64
+	htlcBlink      map[string]int
+	unsettledBlink map[string]int
 }
 
 func (c *Channels) Name() string { return CHANNELS }
@@ -91,6 +98,15 @@ func (c *Channels) PageUp(pageSize int) {
 
 func (c *Channels) Index() int { return c.Cursor }
 
+func (c *Channels) SetPulseFrame(frame int) {
+	if frame != c.lastPulseFrame {
+		c.decayBlinks(c.htlcBlink)
+		c.decayBlinks(c.unsettledBlink)
+		c.lastPulseFrame = frame
+	}
+	c.pulseFrame = frame
+}
+
 func (c *Channels) Sort(column string, order models.Order) {
 	index := c.ColCursor
 	if index >= len(c.columns) {
@@ -127,6 +143,7 @@ func (c *Channels) Render(width, height int) string {
 	// Data rows.
 	dataHeight := height - 2 // header + footer
 	items := c.channels.List()
+	c.syncAlertTransitions(items)
 
 	if c.Cursor >= len(items) {
 		c.Cursor = len(items) - 1
@@ -179,8 +196,12 @@ func (c *Channels) Render(width, height int) string {
 
 func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 	channels := &Channels{
-		cfg:      cfg,
-		channels: chans,
+		cfg:            cfg,
+		channels:       chans,
+		prevHTLC:       make(map[string]int),
+		prevUnsettled:  make(map[string]int64),
+		htlcBlink:      make(map[string]int),
+		unsettledBlink: make(map[string]int),
 	}
 
 	printer := message.NewPrinter(language.English)
@@ -333,7 +354,15 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 					}
 				},
 				display: func(c *netmodels.Channel, opts ...color.Option) string {
-					return color.Yellow(opts...)(fmt.Sprintf("%5d", len(c.PendingHTLC)))
+					count := len(c.PendingHTLC)
+					value := fmt.Sprintf("%5d", count)
+					if channels.htlcBlink[c.ChannelPoint] > 0 {
+						return channels.renderExitBlink(value, true)
+					}
+					if count == 0 {
+						return color.Yellow(opts...)(value)
+					}
+					return channels.renderAlertValue(value, true)
 				},
 			}
 		case "UNSETTLED":
@@ -346,7 +375,14 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 					}
 				},
 				display: func(c *netmodels.Channel, opts ...color.Option) string {
-					return color.Yellow(opts...)(printer.Sprintf("%10d", c.UnsettledBalance))
+					value := printer.Sprintf("%10d", c.UnsettledBalance)
+					if channels.unsettledBlink[c.ChannelPoint] > 0 {
+						return channels.renderExitBlink(value, false)
+					}
+					if c.UnsettledBalance == 0 {
+						return color.Yellow(opts...)(value)
+					}
+					return channels.renderAlertValue(value, false)
 				},
 			}
 		case "CFEE":
@@ -617,6 +653,92 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 	}
 
 	return channels
+}
+
+func (c *Channels) renderAlertValue(value string, htlc bool) string {
+	baseBg := lipgloss.Color("#22c55e")
+	baseFg := lipgloss.Color("#111827")
+	hotBg := lipgloss.Color("#ffff00")
+	hotFg := lipgloss.Color("#111827")
+
+	width := utf8.RuneCountInString(value)
+	if width == 0 {
+		return value
+	}
+
+	hot := c.pulseFrame % width
+	trail := (hot - 1 + width) % width
+
+	var b strings.Builder
+	for pos, r := range value {
+		style := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(baseFg).
+			Background(baseBg)
+
+		switch pos {
+		case hot:
+			style = style.Foreground(hotFg).Background(hotBg)
+		case trail:
+			style = style.Background(hotBg)
+		}
+
+		b.WriteString(style.Render(string(r)))
+	}
+
+	return b.String()
+}
+
+func (c *Channels) renderExitBlink(value string, htlc bool) string {
+	flashFg := lipgloss.Color("#111827")
+	flashBg := lipgloss.Color("#ffff00")
+	idleFg := lipgloss.Color("#111827")
+	idleBg := lipgloss.Color("#22c55e")
+
+	style := lipgloss.NewStyle().Bold(true).Foreground(idleFg).Background(idleBg)
+	if c.pulseFrame%2 == 0 {
+		style = lipgloss.NewStyle().Bold(true).Foreground(flashFg).Background(flashBg)
+	}
+	return style.Render(value)
+}
+
+func (c *Channels) syncAlertTransitions(items []*netmodels.Channel) {
+	active := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		key := item.ChannelPoint
+		active[key] = struct{}{}
+
+		curHTLC := len(item.PendingHTLC)
+		if prev, ok := c.prevHTLC[key]; ok && prev > 0 && curHTLC == 0 {
+			c.htlcBlink[key] = 4
+		}
+		c.prevHTLC[key] = curHTLC
+
+		curUnsettled := item.UnsettledBalance
+		if prev, ok := c.prevUnsettled[key]; ok && prev > 0 && curUnsettled == 0 {
+			c.unsettledBlink[key] = 4
+		}
+		c.prevUnsettled[key] = curUnsettled
+	}
+
+	for key := range c.prevHTLC {
+		if _, ok := active[key]; !ok {
+			delete(c.prevHTLC, key)
+			delete(c.prevUnsettled, key)
+			delete(c.htlcBlink, key)
+			delete(c.unsettledBlink, key)
+		}
+	}
+}
+
+func (c *Channels) decayBlinks(blinks map[string]int) {
+	for key, count := range blinks {
+		if count <= 1 {
+			delete(blinks, key)
+			continue
+		}
+		blinks[key] = count - 1
+	}
 }
 
 func channelDisabled(c *netmodels.Channel, opts ...color.Option) string {

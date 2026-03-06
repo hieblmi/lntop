@@ -8,3 +8,5 @@ import (
 type eventMsg struct {
 	event *events.Event
 }
+
+type pulseTickMsg struct{}

@@ -67,3 +67,41 @@ func TestHeaderRenderWidthBounded(t *testing.T) {
 		t.Fatalf("header width %d exceeds 80", w)
 	}
 }
+
+func TestChannelAlertPulseWidthStable(t *testing.T) {
+	channels := &Channels{}
+
+	channels.SetPulseFrame(0)
+	first := channels.renderAlertValue("    3", true)
+	channels.SetPulseFrame(1)
+	second := channels.renderAlertValue("    3", true)
+
+	if w := lipgloss.Width(first); w != 5 {
+		t.Fatalf("first pulse width %d, want 5", w)
+	}
+	if w := lipgloss.Width(second); w != 5 {
+		t.Fatalf("second pulse width %d, want 5", w)
+	}
+}
+
+func TestChannelExitBlinkTriggeredOnZeroTransition(t *testing.T) {
+	channels := &Channels{
+		prevHTLC:       map[string]int{"chan": 2},
+		prevUnsettled:  map[string]int64{"chan": 50},
+		htlcBlink:      make(map[string]int),
+		unsettledBlink: make(map[string]int),
+	}
+
+	channels.syncAlertTransitions([]*netmodels.Channel{{
+		ChannelPoint:     "chan",
+		UnsettledBalance: 0,
+		PendingHTLC:      nil,
+	}})
+
+	if channels.htlcBlink["chan"] == 0 {
+		t.Fatalf("expected HTLC blink to start on zero transition")
+	}
+	if channels.unsettledBlink["chan"] == 0 {
+		t.Fatalf("expected unsettled blink to start on zero transition")
+	}
+}

@@ -28,6 +28,7 @@ type model struct {
 	activeView string
 	inDetail   bool
 	menuOpen   bool
+	pulseFrame int
 }
 
 func newModel(a *app.App, sub chan *events.Event) *model {
@@ -46,7 +47,13 @@ func (m *model) Init() tea.Cmd {
 	// Load initial data.
 	ctx := context.Background()
 	m.loadInitialData(ctx)
-	return waitForEvent(m.sub)
+	return tea.Batch(waitForEvent(m.sub), pulseTickCmd())
+}
+
+func pulseTickCmd() tea.Cmd {
+	return tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg {
+		return pulseTickMsg{}
+	})
 }
 
 func (m *model) loadInitialData(ctx context.Context) {
@@ -86,6 +93,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case eventMsg:
 		m.handleEvent(msg.event)
 		return m, waitForEvent(m.sub)
+
+	case pulseTickMsg:
+		m.pulseFrame++
+		return m, pulseTickCmd()
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -433,6 +444,7 @@ func (m *model) View() string {
 	}
 
 	renderW := m.renderWidth()
+	m.views.Channels.SetPulseFrame(m.pulseFrame)
 
 	// Header.
 	header := m.views.Header.Render(renderW)

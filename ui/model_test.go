@@ -75,3 +75,16 @@ func TestHandleKeyClosingMenuCommitsPreviewSelection(t *testing.T) {
 		t.Fatalf("menu should close after F2")
 	}
 }
+
+func TestPulseTickAdvancesFrame(t *testing.T) {
+	m := &model{}
+
+	_, cmd := m.Update(pulseTickMsg{})
+
+	if m.pulseFrame != 1 {
+		t.Fatalf("pulseFrame = %d, want 1", m.pulseFrame)
+	}
+	if cmd == nil {
+		t.Fatalf("expected next pulse tick cmd")
+	}
+}
