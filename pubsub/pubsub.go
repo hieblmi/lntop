@@ -199,6 +199,7 @@ func (p *PubSub) Run(ctx context.Context, sub chan *events.Event) {
 	p.graphUpdates(ctx, sub)
 	p.ticker(ctx, sub,
 		withTickerInfo(),
+		withTickerWalletBalance(),
 		withTickerChannelsBalance(),
 		withTickerChannels(),
 	)

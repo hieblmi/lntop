@@ -78,10 +78,16 @@ func (c *Transactions) Sort(column string, order models.Order) {
 
 func (c *Transactions) Render(width, height int) string {
 	var b strings.Builder
+	colWidths := make([]int, len(c.columns))
+	for i := range c.columns {
+		colWidths[i] = c.columns[i].width
+	}
+	visibleStart, visibleEnd := visibleColumnRange(width, c.ColCursor, colWidths)
 
 	// Column header.
 	var hdr strings.Builder
-	for i, col := range c.columns {
+	for i := visibleStart; i < visibleEnd; i++ {
+		col := c.columns[i]
 		name := renderHeaderCell(col.name, col.width, DefaultColStyle)
 		if i == c.ColCursor {
 			name = renderHeaderCell(col.name, col.width, ActiveColStyle)
@@ -91,7 +97,7 @@ func (c *Transactions) Render(width, height int) string {
 		hdr.WriteString(name)
 		hdr.WriteString(" ")
 	}
-	b.WriteString(HeaderBarStyle.Width(width).MaxWidth(width).Render(safeTruncRow(hdr.String(), width)))
+	b.WriteString(renderTableHeader(hdr.String(), width))
 	b.WriteString("\n")
 
 	dataHeight := height - 2
@@ -110,7 +116,8 @@ func (c *Transactions) Render(width, height int) string {
 	for idx := c.Offset; idx < end; idx++ {
 		item := items[idx]
 		var row strings.Builder
-		for i, col := range c.columns {
+		for i := visibleStart; i < visibleEnd; i++ {
+			col := c.columns[i]
 			var opt color.Option
 			if i == c.ColCursor {
 				opt = color.Bold
@@ -131,7 +138,7 @@ func (c *Transactions) Render(width, height int) string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(renderFooter(width, "F2", "Menu", "Enter", "Transaction", "F10", "Quit"))
+	b.WriteString(renderFooter(width, "F2", "Menu", "Enter", "Transaction", "F9", "Fwd Window", "F10", "Quit"))
 	return b.String()
 }
 

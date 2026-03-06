@@ -109,6 +109,31 @@ func withTickerChannelsBalance() tickerFunc {
 	}
 }
 
+// withTickerWalletBalance checks if wallet balances changed in the ticker interval.
+func withTickerWalletBalance() tickerFunc {
+	var old *models.WalletBalance
+	return func(ctx context.Context, logger logging.Logger, net *network.Network, sub chan *events.Event) {
+		walletBalance, err := net.GetWalletBalance(ctx)
+		if err != nil {
+			logger.Error("network wallet balance returned an error", logging.Error(err))
+		}
+		if old != nil && walletBalance != nil {
+			if old.TotalBalance != walletBalance.TotalBalance ||
+				old.ConfirmedBalance != walletBalance.ConfirmedBalance ||
+				old.UnconfirmedBalance != walletBalance.UnconfirmedBalance ||
+				old.LockedBalance != walletBalance.LockedBalance ||
+				old.ReservedBalanceAnchorChan != walletBalance.ReservedBalanceAnchorChan {
+				select {
+				case sub <- events.New(events.WalletBalanceUpdated):
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+		old = walletBalance
+	}
+}
+
 // withTickerChannels detects per-channel state changes that don't affect the
 // aggregate channel balance, such as sent/received totals or HTLC counts.
 func withTickerChannels() tickerFunc {

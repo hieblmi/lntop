@@ -3,6 +3,7 @@ package models
 import (
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/hieblmi/lntop/network/models"
 )
@@ -16,6 +17,21 @@ type FwdingHist struct {
 	list         []*models.ForwardingEvent
 	sort         FwdinghistSort
 	mu           sync.RWMutex
+}
+
+type FwdingHistStats struct {
+	Count                 int
+	ForwardedTotal        uint64
+	FeesTotalMsat         uint64
+	LargestForward        uint64
+	SmallestForward       uint64
+	MostProfitableFeeMsat uint64
+	HottestLinkInChanID   uint64
+	HottestLinkOutChanID  uint64
+	HottestLinkInAlias    string
+	HottestLinkOutAlias   string
+	FirstEventTime        time.Time
+	LastEventTime         time.Time
 }
 
 func (t *FwdingHist) Current() *models.ForwardingEvent {
@@ -65,4 +81,55 @@ func (t *FwdingHist) Update(events []*models.ForwardingEvent) {
 	if t.sort != nil {
 		sort.Sort(t)
 	}
+}
+
+func (t *FwdingHist) Stats() FwdingHistStats {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	stats := FwdingHistStats{Count: len(t.list)}
+	if len(t.list) == 0 {
+		return stats
+	}
+
+	stats.FirstEventTime = t.list[0].EventTime
+	stats.LastEventTime = t.list[0].EventTime
+	stats.SmallestForward = t.list[0].AmtOut
+	type routeKey struct {
+		in  uint64
+		out uint64
+	}
+	linkForwarded := make(map[routeKey]uint64)
+	hottestForwarded := uint64(0)
+
+	for _, event := range t.list {
+		stats.ForwardedTotal += event.AmtOut
+		stats.FeesTotalMsat += event.FeeMsat
+		if event.AmtOut > stats.LargestForward {
+			stats.LargestForward = event.AmtOut
+		}
+		if event.AmtOut < stats.SmallestForward {
+			stats.SmallestForward = event.AmtOut
+		}
+		if event.FeeMsat > stats.MostProfitableFeeMsat {
+			stats.MostProfitableFeeMsat = event.FeeMsat
+		}
+		if event.EventTime.Before(stats.FirstEventTime) {
+			stats.FirstEventTime = event.EventTime
+		}
+		if event.EventTime.After(stats.LastEventTime) {
+			stats.LastEventTime = event.EventTime
+		}
+		key := routeKey{in: event.ChanIdIn, out: event.ChanIdOut}
+		linkForwarded[key] += event.AmtOut
+		if linkForwarded[key] > hottestForwarded {
+			hottestForwarded = linkForwarded[key]
+			stats.HottestLinkInChanID = event.ChanIdIn
+			stats.HottestLinkOutChanID = event.ChanIdOut
+			stats.HottestLinkInAlias = event.PeerAliasIn
+			stats.HottestLinkOutAlias = event.PeerAliasOut
+		}
+	}
+
+	return stats
 }

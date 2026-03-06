@@ -27,12 +27,13 @@ type fwdinghistColumn struct {
 }
 
 type FwdingHist struct {
-	cfg        *config.View
-	columns    []fwdinghistColumn
-	fwdinghist *models.FwdingHist
-	Cursor     int
-	Offset     int
-	ColCursor  int
+	cfg           *config.View
+	columns       []fwdinghistColumn
+	fwdinghist    *models.FwdingHist
+	windowEditing bool
+	Cursor        int
+	Offset        int
+	ColCursor     int
 }
 
 func (c *FwdingHist) Name() string { return FWDINGHIST }
@@ -77,9 +78,15 @@ func (c *FwdingHist) Sort(column string, order models.Order) {
 
 func (c *FwdingHist) Render(width, height int) string {
 	var b strings.Builder
+	colWidths := make([]int, len(c.columns))
+	for i := range c.columns {
+		colWidths[i] = c.columns[i].width
+	}
+	visibleStart, visibleEnd := visibleColumnRange(width, c.ColCursor, colWidths)
 
 	var hdr strings.Builder
-	for i, col := range c.columns {
+	for i := visibleStart; i < visibleEnd; i++ {
+		col := c.columns[i]
 		name := renderHeaderCell(col.name, col.width, DefaultColStyle)
 		if i == c.ColCursor {
 			name = renderHeaderCell(col.name, col.width, ActiveColStyle)
@@ -89,7 +96,7 @@ func (c *FwdingHist) Render(width, height int) string {
 		hdr.WriteString(name)
 		hdr.WriteString(" ")
 	}
-	b.WriteString(HeaderBarStyle.Width(width).MaxWidth(width).Render(safeTruncRow(hdr.String(), width)))
+	b.WriteString(renderTableHeader(hdr.String(), width))
 	b.WriteString("\n")
 
 	dataHeight := height - 2
@@ -108,7 +115,8 @@ func (c *FwdingHist) Render(width, height int) string {
 	for idx := c.Offset; idx < end; idx++ {
 		item := items[idx]
 		var row strings.Builder
-		for i, col := range c.columns {
+		for i := visibleStart; i < visibleEnd; i++ {
+			col := c.columns[i]
 			var opt color.Option
 			if i == c.ColCursor {
 				opt = color.Bold
@@ -129,9 +137,15 @@ func (c *FwdingHist) Render(width, height int) string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(renderFooter(width,
-		"F2", "Menu", "Enter", "FwdingHist", "F10", "Quit",
-		fmt.Sprintf("  Total: %d", c.fwdinghist.Len())))
+	if c.windowEditing {
+		b.WriteString(renderFooter(width,
+			"Esc", "Cancel", "Enter", "Apply", "F9", "Fwd Window", "F10", "Quit",
+			fmt.Sprintf("  Total: %d", c.fwdinghist.Len())))
+	} else {
+		b.WriteString(renderFooter(width,
+			"F2", "Menu", "W", "Window", "F9", "Fwd Window", "F10", "Quit",
+			fmt.Sprintf("  Total: %d", c.fwdinghist.Len())))
+	}
 	return b.String()
 }
 
@@ -259,6 +273,10 @@ func NewFwdingHist(cfg *config.View, hist *models.FwdingHist, channels *models.C
 		}
 	}
 	return fh
+}
+
+func (c *FwdingHist) SetWindowEditing(editing bool) {
+	c.windowEditing = editing
 }
 
 func fwdInboundFee(channels *models.Channels, chanID uint64, extract func(*netmodels.RoutingPolicy) int32) int32 {

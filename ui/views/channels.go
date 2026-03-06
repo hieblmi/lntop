@@ -18,7 +18,7 @@ import (
 var DefaultChannelsColumns = []string{
 	"STATUS", "ALIAS", "GAUGE", "LOCAL", "REMOTE", "CAP",
 	"SENT", "RECEIVED", "HTLC", "UNSETTLED", "CFEE",
-	"LAST UPDATE", "AGE", "PRIVATE", "ID",
+	"LAST UPDATE", "AGE", "PRIVATE", "ID", "CHANNEL_POINT",
 }
 
 type channelsColumn struct {
@@ -142,10 +142,16 @@ func (c *Channels) Sort(column string, order models.Order) {
 
 func (c *Channels) Render(width, height int) string {
 	var b strings.Builder
+	colWidths := make([]int, len(c.columns))
+	for i := range c.columns {
+		colWidths[i] = c.columns[i].width
+	}
+	visibleStart, visibleEnd := visibleColumnRange(width, c.ColCursor, colWidths)
 
 	// Column header.
 	var hdr strings.Builder
-	for i, col := range c.columns {
+	for i := visibleStart; i < visibleEnd; i++ {
+		col := c.columns[i]
 		name := renderHeaderCell(col.name, col.width, DefaultColStyle)
 		if i == c.ColCursor {
 			name = renderHeaderCell(col.name, col.width, ActiveColStyle)
@@ -155,7 +161,7 @@ func (c *Channels) Render(width, height int) string {
 		hdr.WriteString(name)
 		hdr.WriteString(" ")
 	}
-	b.WriteString(HeaderBarStyle.Width(width).MaxWidth(width).Render(safeTruncRow(hdr.String(), width)))
+	b.WriteString(renderTableHeader(hdr.String(), width))
 	b.WriteString("\n")
 
 	// Data rows.
@@ -184,7 +190,8 @@ func (c *Channels) Render(width, height int) string {
 	for idx := c.Offset; idx < end; idx++ {
 		item := items[idx]
 		var row strings.Builder
-		for i, col := range c.columns {
+		for i := visibleStart; i < visibleEnd; i++ {
+			col := c.columns[i]
 			var opt color.Option
 			if i == c.ColCursor {
 				opt = color.Bold
@@ -208,7 +215,7 @@ func (c *Channels) Render(width, height int) string {
 	}
 
 	// Footer.
-	b.WriteString(renderFooter(width, "F2", "Menu", "Enter", "Channel", "F10", "Quit"))
+	b.WriteString(renderFooter(width, "F2", "Menu", "Enter", "Channel", "F9", "Fwd Window", "F10", "Quit"))
 	return b.String()
 }
 
@@ -474,6 +481,19 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 						return fmt.Sprintf("%-19s", "")
 					}
 					return color.White(opts...)(fmt.Sprintf("%-19d", c.ID))
+				},
+			}
+		case "CHANNEL_POINT":
+			channels.columns[i] = channelsColumn{
+				width: 66,
+				name:  fmt.Sprintf("%-66s", columns[i]),
+				sort: func(order models.Order) models.ChannelsSort {
+					return func(c1, c2 *netmodels.Channel) bool {
+						return models.StringSort(c1.ChannelPoint, c2.ChannelPoint, order)
+					}
+				},
+				display: func(c *netmodels.Channel, opts ...color.Option) string {
+					return color.White(opts...)(fmt.Sprintf("%-66s", c.ChannelPoint))
 				},
 			}
 		case "SCID":

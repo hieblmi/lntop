@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/hieblmi/lntop/config"
 	netmodels "github.com/hieblmi/lntop/network/models"
 	uimodels "github.com/hieblmi/lntop/ui/models"
 )
@@ -115,5 +116,119 @@ func TestChannelExitBlinkTriggeredOnZeroTransition(t *testing.T) {
 	}
 	if channels.receivedFlash["chan"] == 0 {
 		t.Fatalf("expected received flash to start on increase")
+	}
+}
+
+func TestSummaryRenderWidthBoundedWithAccounting(t *testing.T) {
+	channels := uimodels.NewChannels()
+	channels.Add(&netmodels.Channel{Capacity: 10_000})
+
+	fwdingHist := &uimodels.FwdingHist{StartTime: "-1d"}
+	fwdingHist.Update([]*netmodels.ForwardingEvent{{
+		AmtOut: 8_000,
+		Fee:    80,
+	}})
+
+	summary := NewSummary(
+		&uimodels.Info{Info: &netmodels.Info{
+			NumActiveChannels:   1,
+			NumPendingChannels:  0,
+			NumInactiveChannels: 0,
+		}},
+		&uimodels.ChannelsBalance{ChannelsBalance: &netmodels.ChannelsBalance{
+			Balance: 4_000,
+		}},
+		&uimodels.WalletBalance{WalletBalance: &netmodels.WalletBalance{
+			TotalBalance:              5_000,
+			ConfirmedBalance:          4_000,
+			UnconfirmedBalance:        1_000,
+			LockedBalance:             200,
+			ReservedBalanceAnchorChan: 300,
+			AccountBalance: map[string]*netmodels.WalletAccountBalance{
+				"default": {ConfirmedBalance: 4_000, UnconfirmedBalance: 1_000},
+			},
+		}},
+		channels,
+		fwdingHist,
+	)
+	summary.SetForwardingState(true, true, "-1w", "")
+	summary.SetPulseFrame(1)
+
+	out := summary.Render(100)
+	if !strings.Contains(out, "Accounting") {
+		t.Fatalf("summary should include accounting panel")
+	}
+	for i, line := range strings.Split(out, "\n") {
+		if w := lipgloss.Width(line); w > 100 {
+			t.Fatalf("line %d width %d exceeds 100", i+1, w)
+		}
+	}
+}
+
+func TestSummaryRenderFillsWideLayoutWidth(t *testing.T) {
+	channels := uimodels.NewChannels()
+	channels.Add(&netmodels.Channel{Capacity: 10_000})
+
+	fwdingHist := &uimodels.FwdingHist{StartTime: "-1d"}
+	fwdingHist.Update([]*netmodels.ForwardingEvent{{
+		AmtOut:  8_000,
+		FeeMsat: 80_000,
+	}})
+
+	summary := NewSummary(
+		&uimodels.Info{Info: &netmodels.Info{
+			NumActiveChannels:   1,
+			NumPendingChannels:  0,
+			NumInactiveChannels: 0,
+		}},
+		&uimodels.ChannelsBalance{ChannelsBalance: &netmodels.ChannelsBalance{
+			Balance: 4_000,
+		}},
+		&uimodels.WalletBalance{WalletBalance: &netmodels.WalletBalance{
+			TotalBalance:              5_000,
+			ConfirmedBalance:          4_000,
+			UnconfirmedBalance:        1_000,
+			LockedBalance:             200,
+			ReservedBalanceAnchorChan: 300,
+			AccountBalance:            map[string]*netmodels.WalletAccountBalance{},
+		}},
+		channels,
+		fwdingHist,
+	)
+
+	out := summary.Render(180)
+	for i, line := range strings.Split(out, "\n") {
+		if w := lipgloss.Width(line); w != 180 {
+			t.Fatalf("line %d width %d, want 180", i+1, w)
+		}
+	}
+}
+
+func TestChannelsRenderSlidesVisibleColumnsWithColumnCursor(t *testing.T) {
+	chModel := uimodels.NewChannels()
+	chModel.Add(&netmodels.Channel{
+		ChannelPoint:  "abcdef:2",
+		Node:          &netmodels.Node{Alias: "alice"},
+		ID:            123,
+		Capacity:      1000,
+		LocalBalance:  500,
+		RemoteBalance: 500,
+	})
+
+	view := NewChannels(&config.View{Columns: []string{
+		"STATUS", "ALIAS", "LOCAL", "REMOTE", "ID", "CHANNEL_POINT",
+	}}, chModel)
+
+	initial := view.Render(60, 6)
+	if strings.Contains(initial, "CHANNEL_POINT") {
+		t.Fatalf("initial render should not show far-right column header")
+	}
+
+	for view.ColCursor < len(view.columns)-1 {
+		view.ColumnRight()
+	}
+	scrolled := view.Render(60, 6)
+	if !strings.Contains(scrolled, "CHANNEL_POINT") {
+		t.Fatalf("render should show far-right column header when cursor moves right")
 	}
 }

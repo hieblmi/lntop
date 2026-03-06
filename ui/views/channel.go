@@ -25,9 +25,13 @@ type Channel struct {
 
 func (c *Channel) Name() string { return CHANNEL }
 
-func (c *Channel) ScrollDown()  { c.Offset++ }
-func (c *Channel) ScrollUp()    { if c.Offset > 0 { c.Offset-- } }
-func (c *Channel) ScrollHome()  { c.Offset = 0 }
+func (c *Channel) ScrollDown() { c.Offset++ }
+func (c *Channel) ScrollUp() {
+	if c.Offset > 0 {
+		c.Offset--
+	}
+}
+func (c *Channel) ScrollHome() { c.Offset = 0 }
 
 func (c *Channel) PageDown(n int) { c.Offset += n }
 func (c *Channel) PageUp(n int) {
@@ -70,7 +74,7 @@ func (c *Channel) Render(width, height int) string {
 	}
 
 	// Footer.
-	b.WriteString(renderFooter(width, "F2", "Menu", "Enter", "Channels", "C", "Get disabled", "F10", "Quit"))
+	b.WriteString(renderFooter(width, "F2", "Menu", "Enter", "Channels", "C", "Get disabled", "F9", "Fwd Window", "F10", "Quit"))
 	return b.String()
 }
 

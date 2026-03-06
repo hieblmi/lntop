@@ -33,8 +33,9 @@ type transactionsLoadedMsg struct {
 }
 
 type forwardingHistoryLoadedMsg struct {
-	events []*netmodels.ForwardingEvent
-	err    error
+	startTime string
+	events    []*netmodels.ForwardingEvent
+	err       error
 }
 
 type channelsLoadedMsg struct {

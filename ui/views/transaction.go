@@ -17,7 +17,11 @@ type Transaction struct {
 
 func (c *Transaction) Name() string { return TRANSACTION }
 func (c *Transaction) ScrollDown()  { c.Offset++ }
-func (c *Transaction) ScrollUp()    { if c.Offset > 0 { c.Offset-- } }
+func (c *Transaction) ScrollUp() {
+	if c.Offset > 0 {
+		c.Offset--
+	}
+}
 
 func (c *Transaction) Render(width, height int) string {
 	var b strings.Builder
@@ -59,7 +63,7 @@ func (c *Transaction) Render(width, height int) string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(renderFooter(width, "F2", "Menu", "Enter", "Transactions", "F10", "Quit"))
+	b.WriteString(renderFooter(width, "F2", "Menu", "Enter", "Transactions", "F9", "Fwd Window", "F10", "Quit"))
 	return b.String()
 }
 

@@ -15,7 +15,7 @@ var menuItems = []struct {
 	{"CHANNEL", CHANNELS},
 	{"TRANSAC", TRANSACTIONS},
 	{"ROUTING", ROUTING},
-	{"FWDHIST", FWDINGHIST},
+	{"FWDINGHISTORY", FWDINGHIST},
 	{"RECEIVED", RECEIVED},
 }
 
@@ -85,7 +85,7 @@ func (m *Menu) Render(width, height int) string {
 	b.WriteString("\n")
 
 	for i, item := range menuItems {
-		line := ansi.Truncate(fmt.Sprintf("%-9s", item.label), innerW, "")
+		line := ansi.Truncate(fmt.Sprintf("%-*s", innerW, item.label), innerW, "")
 		line = padRight(line, innerW)
 		if i == m.Cursor {
 			b.WriteString(menuActiveStyle.Render(line))
@@ -101,7 +101,7 @@ func (m *Menu) Render(width, height int) string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(renderFooter(innerW, "F2", "Close"))
+	b.WriteString(renderFooter(innerW, "F2", "Close", "F9", "Fwd Window"))
 	return menuBorderStyle.Render(b.String())
 }
 

@@ -12,10 +12,21 @@ import (
 )
 
 func protoToWalletBalance(w *lnrpc.WalletBalanceResponse) *models.WalletBalance {
+	accountBalance := make(map[string]*models.WalletAccountBalance, len(w.GetAccountBalance()))
+	for name, balance := range w.GetAccountBalance() {
+		accountBalance[name] = &models.WalletAccountBalance{
+			ConfirmedBalance:   balance.GetConfirmedBalance(),
+			UnconfirmedBalance: balance.GetUnconfirmedBalance(),
+		}
+	}
+
 	return &models.WalletBalance{
-		TotalBalance:       w.GetTotalBalance(),
-		ConfirmedBalance:   w.GetConfirmedBalance(),
-		UnconfirmedBalance: w.GetUnconfirmedBalance(),
+		TotalBalance:              w.GetTotalBalance(),
+		ConfirmedBalance:          w.GetConfirmedBalance(),
+		UnconfirmedBalance:        w.GetUnconfirmedBalance(),
+		LockedBalance:             w.GetLockedBalance(),
+		ReservedBalanceAnchorChan: w.GetReservedBalanceAnchorChan(),
+		AccountBalance:            accountBalance,
 	}
 }
 

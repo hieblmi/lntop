@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -33,14 +34,17 @@ type model struct {
 	pulseFrame  int
 	pulseActive bool
 
-	infoLoading            bool
-	walletBalanceLoading   bool
-	channelsBalanceLoading bool
-	transactionsLoading    bool
-	forwardingHistLoading  bool
-	channelsLoading        bool
-	receivedLoading        bool
-	currentNodeLoading     bool
+	infoLoading             bool
+	walletBalanceLoading    bool
+	channelsBalanceLoading  bool
+	transactionsLoading     bool
+	forwardingHistLoading   bool
+	forwardingWindowEditing bool
+	forwardingWindowInput   string
+	forwardingWindowErr     string
+	channelsLoading         bool
+	receivedLoading         bool
+	currentNodeLoading      bool
 
 	startupActive    bool
 	startupFinishing bool
@@ -60,6 +64,8 @@ var startupTaskLabels = []struct {
 	{"received", "Received invoices"},
 	{"channels", "Channels"},
 }
+
+var forwardingWindowRE = regexp.MustCompile(`^(|-\d{1,18}[smhdwMy]|\d+)$`)
 
 func newModel(a *app.App, sub chan *events.Event) *model {
 	m := models.New(a)
@@ -212,6 +218,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case forwardingHistoryLoadedMsg:
 		m.forwardingHistLoading = false
+		if msg.startTime != m.models.FwdingHist.StartTime {
+			return m, tea.Batch(m.loadForwardingHistoryCmd(), m.ensurePulseTick())
+		}
 		if msg.err != nil {
 			m.startupWaiting = "Retrying Forwarding history"
 			m.logger.Error("refresh forwarding history failed", logging.Error(msg.err))
@@ -268,13 +277,20 @@ func (m *model) handleEvent(e *events.Event) tea.Cmd {
 	case events.TransactionCreated:
 		cmds = append(cmds, m.loadInfoCmd(), m.loadWalletBalanceCmd(), m.loadTransactionsCmd())
 	case events.BlockReceived:
-		cmds = append(cmds, m.loadInfoCmd(), m.loadTransactionsCmd())
+		cmds = append(cmds,
+			m.loadInfoCmd(),
+			m.loadWalletBalanceCmd(),
+			m.loadChannelsBalanceCmd(),
+			m.loadChannelsCmd(),
+			m.loadTransactionsCmd(),
+			m.loadForwardingHistoryCmd(),
+		)
 	case events.WalletBalanceUpdated:
-		cmds = append(cmds, m.loadInfoCmd(), m.loadWalletBalanceCmd(), m.loadTransactionsCmd(), m.loadForwardingHistoryCmd())
+		cmds = append(cmds, m.loadInfoCmd(), m.loadWalletBalanceCmd(), m.loadTransactionsCmd())
 	case events.ChannelBalanceUpdated:
 		cmds = append(cmds, m.loadInfoCmd(), m.loadChannelsBalanceCmd(), m.loadChannelsCmd(), m.loadForwardingHistoryCmd())
 	case events.ChannelPending, events.ChannelActive, events.ChannelInactive:
-		cmds = append(cmds, m.loadInfoCmd(), m.loadChannelsBalanceCmd(), m.loadChannelsCmd())
+		cmds = append(cmds, m.loadInfoCmd(), m.loadChannelsBalanceCmd(), m.loadChannelsCmd(), m.loadForwardingHistoryCmd())
 	case events.ChannelsUpdated:
 		channels, ok := e.Data.([]*netmodels.Channel)
 		if !ok {
@@ -282,6 +298,7 @@ func (m *model) handleEvent(e *events.Event) tea.Cmd {
 			break
 		}
 		m.models.ApplyChannels(channels)
+		cmds = append(cmds, m.loadChannelsBalanceCmd(), m.loadForwardingHistoryCmd())
 	case events.InvoiceSettled:
 		cmds = append(cmds, m.loadInfoCmd(), m.loadChannelsBalanceCmd(), m.loadChannelsCmd(), m.loadForwardingHistoryCmd())
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -314,6 +331,23 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
+	if msg.String() == "f9" {
+		m.beginForwardingWindowEdit()
+		return m, m.ensurePulseTick()
+	}
+
+	if m.forwardingWindowEditing {
+		return m.handleForwardingWindowKey(msg)
+	}
+
+	if m.canEditForwardingWindow() {
+		switch msg.String() {
+		case "/", "w":
+			m.beginForwardingWindowEdit()
+			return m, m.ensurePulseTick()
+		}
+	}
+
 	// Menu toggle.
 	if msg.String() == "f2" || msg.String() == "m" {
 		if m.menuOpen {
@@ -343,6 +377,34 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Table view navigation.
 	next, cmd := m.handleTableKey(msg)
 	return next, tea.Batch(cmd, m.ensurePulseTick())
+}
+
+func (m *model) handleForwardingWindowKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.cancelForwardingWindowEdit()
+		return m, nil
+	case "enter":
+		return m, m.applyForwardingWindowEdit()
+	case "backspace", "ctrl+h":
+		runes := []rune(m.forwardingWindowInput)
+		if len(runes) > 0 {
+			m.forwardingWindowInput = string(runes[:len(runes)-1])
+		}
+		m.forwardingWindowErr = ""
+		return m, nil
+	}
+
+	if msg.Type == tea.KeyRunes {
+		for _, r := range msg.Runes {
+			if strings.ContainsRune("-0123456789smhdwMy", r) {
+				m.forwardingWindowInput += string(r)
+				m.forwardingWindowErr = ""
+			}
+		}
+	}
+
+	return m, nil
 }
 
 func (m *model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -588,6 +650,7 @@ func (m *model) onEnter() {
 
 // mainHeight returns the height available for the main content area.
 func (m *model) mainHeight() int {
+	m.syncSummaryState()
 	return m.mainHeightForSummary(m.views.Summary.Render(m.renderWidth()))
 }
 
@@ -624,6 +687,7 @@ func (m *model) View() string {
 
 	renderW := m.renderWidth()
 	m.views.Channels.SetPulseFrame(m.pulseFrame)
+	m.syncSummaryState()
 
 	// Header.
 	header := m.views.Header.Render(renderW)
@@ -690,6 +754,9 @@ func (m *model) View() string {
 }
 
 func (m *model) shouldAnimate() bool {
+	if m.forwardingHistLoading {
+		return true
+	}
 	if m.inDetail {
 		return false
 	}
@@ -980,4 +1047,56 @@ func (m *model) renderTable(viewName string, width, height int) string {
 		return m.views.Received.Render(width, height)
 	}
 	return ""
+}
+
+func (m *model) syncSummaryState() {
+	if m.views == nil {
+		return
+	}
+	if m.views.Summary != nil {
+		m.views.Summary.SetPulseFrame(m.pulseFrame)
+		m.views.Summary.SetForwardingState(
+			m.forwardingHistLoading,
+			m.forwardingWindowEditing,
+			m.forwardingWindowInput,
+			m.forwardingWindowErr,
+		)
+	}
+	if m.views.FwdingHist != nil {
+		m.views.FwdingHist.SetWindowEditing(m.forwardingWindowEditing)
+	}
+}
+
+func (m *model) canEditForwardingWindow() bool {
+	return !m.menuOpen && !m.inDetail && m.activeView == views.FWDINGHIST
+}
+
+func (m *model) beginForwardingWindowEdit() {
+	m.forwardingWindowEditing = true
+	m.forwardingWindowInput = m.models.FwdingHist.StartTime
+	m.forwardingWindowErr = ""
+}
+
+func (m *model) cancelForwardingWindowEdit() {
+	m.forwardingWindowEditing = false
+	m.forwardingWindowInput = m.models.FwdingHist.StartTime
+	m.forwardingWindowErr = ""
+}
+
+func (m *model) applyForwardingWindowEdit() tea.Cmd {
+	next := strings.TrimSpace(m.forwardingWindowInput)
+	if !forwardingWindowRE.MatchString(next) {
+		m.forwardingWindowErr = "use -1d/-1w/-1y"
+		return nil
+	}
+
+	m.forwardingWindowEditing = false
+	m.forwardingWindowInput = next
+	m.forwardingWindowErr = ""
+	if next == m.models.FwdingHist.StartTime {
+		return nil
+	}
+
+	m.models.FwdingHist.StartTime = next
+	return tea.Batch(m.loadForwardingHistoryCmd(), m.ensurePulseTick())
 }

@@ -42,7 +42,7 @@ type Views struct {
 func New(cfg config.Views, m *models.Models) *Views {
 	return &Views{
 		Header:       NewHeader(m.Info),
-		Summary:      NewSummary(m.Info, m.ChannelsBalance, m.WalletBalance, m.Channels),
+		Summary:      NewSummary(m.Info, m.ChannelsBalance, m.WalletBalance, m.Channels, m.FwdingHist),
 		Menu:         NewMenu(),
 		Channels:     NewChannels(cfg.Channels, m.Channels),
 		Channel:      NewChannel(m.Channels),
@@ -163,6 +163,54 @@ func renderHeaderCell(label string, width int, style lipgloss.Style) string {
 	}
 	text := ansi.Truncate(strings.TrimSpace(label), width, "")
 	return style.Width(width).Align(lipgloss.Center).Render(text)
+}
+
+func renderTableHeader(row string, width int) string {
+	return HeaderBarStyle.Render(safeTruncRow(row, width))
+}
+
+func visibleColumnRange(width int, cursor int, colWidths []int) (start int, end int) {
+	if len(colWidths) == 0 {
+		return 0, 0
+	}
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor >= len(colWidths) {
+		cursor = len(colWidths) - 1
+	}
+
+	maxWidth := safeRowWidth(width)
+	if maxWidth < 1 {
+		return 0, 1
+	}
+
+	start = cursor
+	used := colWidths[cursor]
+	if used > maxWidth {
+		return cursor, cursor + 1
+	}
+
+	for start > 0 {
+		add := colWidths[start-1] + 1
+		if used+add > maxWidth {
+			break
+		}
+		start--
+		used += add
+	}
+
+	end = cursor + 1
+	for end < len(colWidths) {
+		add := colWidths[end] + 1
+		if used+add > maxWidth {
+			break
+		}
+		used += add
+		end++
+	}
+
+	return start, end
 }
 
 // selectedRow renders a row with the selected highlight, stripping colors

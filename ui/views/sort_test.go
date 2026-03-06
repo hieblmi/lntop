@@ -11,7 +11,7 @@ func TestChannelsAllColumnsSortable(t *testing.T) {
 	view := NewChannels(&config.View{Columns: []string{
 		"STATUS", "ALIAS", "GAUGE", "LOCAL", "REMOTE", "CAP",
 		"SENT", "RECEIVED", "HTLC", "UNSETTLED", "CFEE",
-		"LAST UPDATE", "PRIVATE", "ID", "SCID", "NUPD",
+		"LAST UPDATE", "PRIVATE", "ID", "CHANNEL_POINT", "SCID", "NUPD",
 		"BASE_OUT", "RATE_OUT", "BASE_IN", "RATE_IN",
 		"INBOUND_BASE", "INBOUND_RATE", "AGE",
 	}}, uimodels.NewChannels())

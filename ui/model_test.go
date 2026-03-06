@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/hieblmi/lntop/app"
+	"github.com/hieblmi/lntop/events"
 	"github.com/hieblmi/lntop/logging"
 	netmodels "github.com/hieblmi/lntop/network/models"
 	uimodels "github.com/hieblmi/lntop/ui/models"
@@ -224,5 +225,127 @@ func TestStartupTaskErrorRetriesInsteadOfCompleting(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatalf("expected retry command after startup task failure")
+	}
+}
+
+func TestApplyForwardingWindowEditUpdatesStartTime(t *testing.T) {
+	m := &model{
+		app:        &app.App{},
+		activeView: views.FWDINGHIST,
+		models: &uimodels.Models{
+			FwdingHist: &uimodels.FwdingHist{StartTime: "-1d", MaxNumEvents: 50},
+		},
+	}
+
+	_, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")})
+	if !m.forwardingWindowEditing {
+		t.Fatalf("expected forwarding window editing to start")
+	}
+	if m.forwardingWindowInput != "-1d" {
+		t.Fatalf("forwardingWindowInput = %q, want %q", m.forwardingWindowInput, "-1d")
+	}
+
+	m.forwardingWindowInput = "-1w"
+	cmd := m.applyForwardingWindowEdit()
+
+	if m.models.FwdingHist.StartTime != "-1w" {
+		t.Fatalf("StartTime = %q, want %q", m.models.FwdingHist.StartTime, "-1w")
+	}
+	if m.forwardingWindowEditing {
+		t.Fatalf("expected forwarding window editing to end")
+	}
+	if cmd == nil {
+		t.Fatalf("expected forwarding history reload command")
+	}
+}
+
+func TestApplyForwardingWindowEditRejectsInvalidValue(t *testing.T) {
+	m := &model{
+		models: &uimodels.Models{
+			FwdingHist: &uimodels.FwdingHist{StartTime: "-1d"},
+		},
+		forwardingWindowEditing: true,
+		forwardingWindowInput:   "yesterday",
+	}
+
+	cmd := m.applyForwardingWindowEdit()
+
+	if cmd != nil {
+		t.Fatalf("expected no command for invalid input")
+	}
+	if !m.forwardingWindowEditing {
+		t.Fatalf("editing should stay active on invalid input")
+	}
+	if m.forwardingWindowErr == "" {
+		t.Fatalf("expected validation error")
+	}
+	if m.models.FwdingHist.StartTime != "-1d" {
+		t.Fatalf("StartTime = %q, want %q", m.models.FwdingHist.StartTime, "-1d")
+	}
+}
+
+func TestHandleKeyF9StartsForwardingWindowEditorWithoutChangingView(t *testing.T) {
+	m := &model{
+		activeView: views.CHANNELS,
+		inDetail:   true,
+		menuOpen:   true,
+		models: &uimodels.Models{
+			FwdingHist: &uimodels.FwdingHist{StartTime: "-1w"},
+		},
+	}
+
+	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyF9})
+
+	if m.activeView != views.CHANNELS {
+		t.Fatalf("activeView = %q, want %q", m.activeView, views.CHANNELS)
+	}
+	if !m.inDetail {
+		t.Fatalf("detail mode should stay unchanged")
+	}
+	if !m.menuOpen {
+		t.Fatalf("menu state should stay unchanged")
+	}
+	if !m.forwardingWindowEditing {
+		t.Fatalf("expected forwarding window editing to start")
+	}
+	if m.forwardingWindowInput != "-1w" {
+		t.Fatalf("forwardingWindowInput = %q, want %q", m.forwardingWindowInput, "-1w")
+	}
+	if cmd != nil {
+		t.Fatalf("expected no command when only entering edit mode")
+	}
+}
+
+func TestHandleEventChannelsUpdatedRefreshesSummaryData(t *testing.T) {
+	logger, err := logging.NewNopLogger()
+	if err != nil {
+		t.Fatalf("NewNopLogger() error = %v", err)
+	}
+
+	m := &model{
+		app:    &app.App{},
+		logger: logger,
+		models: &uimodels.Models{
+			Channels:        uimodels.NewChannels(),
+			FwdingHist:      &uimodels.FwdingHist{},
+			ChannelsBalance: &uimodels.ChannelsBalance{},
+		},
+	}
+
+	cmd := m.handleEvent(events.NewWithData(events.ChannelsUpdated, []*netmodels.Channel{{
+		ChannelPoint: "chan-1",
+	}}))
+
+	if m.models.Channels.Len() != 1 {
+		t.Fatalf("expected channels update to be applied immediately")
+	}
+	if !m.channelsBalanceLoading {
+		t.Fatalf("expected channel balance reload to start")
+	}
+	if !m.forwardingHistLoading {
+		t.Fatalf("expected forwarding history reload to start")
+	}
+	if cmd == nil {
+		t.Fatalf("expected reload command batch")
 	}
 }
