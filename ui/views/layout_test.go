@@ -88,14 +88,20 @@ func TestChannelExitBlinkTriggeredOnZeroTransition(t *testing.T) {
 	channels := &Channels{
 		prevHTLC:       map[string]int{"chan": 2},
 		prevUnsettled:  map[string]int64{"chan": 50},
+		prevSent:       map[string]int64{"chan": 10},
+		prevReceived:   map[string]int64{"chan": 20},
 		htlcBlink:      make(map[string]int),
 		unsettledBlink: make(map[string]int),
+		sentFlash:      make(map[string]int),
+		receivedFlash:  make(map[string]int),
 	}
 
 	channels.syncAlertTransitions([]*netmodels.Channel{{
-		ChannelPoint:     "chan",
-		UnsettledBalance: 0,
-		PendingHTLC:      nil,
+		ChannelPoint:        "chan",
+		UnsettledBalance:    0,
+		PendingHTLC:         nil,
+		TotalAmountSent:     11,
+		TotalAmountReceived: 21,
 	}})
 
 	if channels.htlcBlink["chan"] == 0 {
@@ -103,5 +109,11 @@ func TestChannelExitBlinkTriggeredOnZeroTransition(t *testing.T) {
 	}
 	if channels.unsettledBlink["chan"] == 0 {
 		t.Fatalf("expected unsettled blink to start on zero transition")
+	}
+	if channels.sentFlash["chan"] == 0 {
+		t.Fatalf("expected sent flash to start on increase")
+	}
+	if channels.receivedFlash["chan"] == 0 {
+		t.Fatalf("expected received flash to start on increase")
 	}
 }

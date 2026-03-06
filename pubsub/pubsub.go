@@ -200,6 +200,7 @@ func (p *PubSub) Run(ctx context.Context, sub chan *events.Event) {
 	p.ticker(ctx, sub,
 		withTickerInfo(),
 		withTickerChannelsBalance(),
+		withTickerChannels(),
 	)
 
 	<-p.stop

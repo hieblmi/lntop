@@ -6,6 +6,7 @@ const (
 	ChannelBalanceUpdated = "channel.balance.updated"
 	ChannelInactive       = "channel.inactive"
 	ChannelPending        = "channel.pending"
+	ChannelsUpdated       = "channels.updated"
 	InvoiceCreated        = "invoice.created"
 	InvoiceSettled        = "invoice.settled"
 	PeerUpdated           = "peer.updated"

@@ -40,8 +40,12 @@ type Channels struct {
 	lastPulseFrame int
 	prevHTLC       map[string]int
 	prevUnsettled  map[string]int64
+	prevSent       map[string]int64
+	prevReceived   map[string]int64
 	htlcBlink      map[string]int
 	unsettledBlink map[string]int
+	sentFlash      map[string]int
+	receivedFlash  map[string]int
 }
 
 func (c *Channels) Name() string { return CHANNELS }
@@ -102,13 +106,15 @@ func (c *Channels) SetPulseFrame(frame int) {
 	if frame != c.lastPulseFrame {
 		c.decayBlinks(c.htlcBlink)
 		c.decayBlinks(c.unsettledBlink)
+		c.decayBlinks(c.sentFlash)
+		c.decayBlinks(c.receivedFlash)
 		c.lastPulseFrame = frame
 	}
 	c.pulseFrame = frame
 }
 
 func (c *Channels) HasAnimatedAlerts() bool {
-	if len(c.htlcBlink) > 0 || len(c.unsettledBlink) > 0 {
+	if len(c.htlcBlink) > 0 || len(c.unsettledBlink) > 0 || len(c.sentFlash) > 0 || len(c.receivedFlash) > 0 {
 		return true
 	}
 	for _, ch := range c.channels.List() {
@@ -212,8 +218,12 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 		channels:       chans,
 		prevHTLC:       make(map[string]int),
 		prevUnsettled:  make(map[string]int64),
+		prevSent:       make(map[string]int64),
+		prevReceived:   make(map[string]int64),
 		htlcBlink:      make(map[string]int),
 		unsettledBlink: make(map[string]int),
+		sentFlash:      make(map[string]int),
+		receivedFlash:  make(map[string]int),
 	}
 
 	printer := message.NewPrinter(language.English)
@@ -338,7 +348,11 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 					}
 				},
 				display: func(c *netmodels.Channel, opts ...color.Option) string {
-					return color.Cyan(opts...)(printer.Sprintf("%12d", c.TotalAmountSent))
+					value := printer.Sprintf("%12d", c.TotalAmountSent)
+					if channels.sentFlash[c.ChannelPoint] > 0 {
+						return channels.renderTrafficFlash(value, false)
+					}
+					return color.Cyan(opts...)(value)
 				},
 			}
 		case "RECEIVED":
@@ -351,7 +365,11 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 					}
 				},
 				display: func(c *netmodels.Channel, opts ...color.Option) string {
-					return color.Cyan(opts...)(printer.Sprintf("%12d", c.TotalAmountReceived))
+					value := printer.Sprintf("%12d", c.TotalAmountReceived)
+					if channels.receivedFlash[c.ChannelPoint] > 0 {
+						return channels.renderTrafficFlash(value, true)
+					}
+					return color.Cyan(opts...)(value)
 				},
 			}
 		case "HTLC":
@@ -712,6 +730,20 @@ func (c *Channels) renderExitBlink(value string, htlc bool) string {
 	return style.Render(value)
 }
 
+func (c *Channels) renderTrafficFlash(value string, received bool) string {
+	flashFg := lipgloss.Color("#f8fafc")
+	flashBg := lipgloss.Color("#dc2626")
+	if received {
+		flashBg = lipgloss.Color("#16a34a")
+	}
+
+	style := lipgloss.NewStyle().Bold(true).Foreground(flashFg)
+	if c.pulseFrame%2 == 0 {
+		style = style.Background(flashBg)
+	}
+	return style.Render(value)
+}
+
 func (c *Channels) syncAlertTransitions(items []*netmodels.Channel) {
 	active := make(map[string]struct{}, len(items))
 	for _, item := range items {
@@ -729,14 +761,30 @@ func (c *Channels) syncAlertTransitions(items []*netmodels.Channel) {
 			c.unsettledBlink[key] = 4
 		}
 		c.prevUnsettled[key] = curUnsettled
+
+		curSent := item.TotalAmountSent
+		if prev, ok := c.prevSent[key]; ok && curSent > prev {
+			c.sentFlash[key] = 2
+		}
+		c.prevSent[key] = curSent
+
+		curReceived := item.TotalAmountReceived
+		if prev, ok := c.prevReceived[key]; ok && curReceived > prev {
+			c.receivedFlash[key] = 2
+		}
+		c.prevReceived[key] = curReceived
 	}
 
 	for key := range c.prevHTLC {
 		if _, ok := active[key]; !ok {
 			delete(c.prevHTLC, key)
 			delete(c.prevUnsettled, key)
+			delete(c.prevSent, key)
+			delete(c.prevReceived, key)
 			delete(c.htlcBlink, key)
 			delete(c.unsettledBlink, key)
+			delete(c.sentFlash, key)
+			delete(c.receivedFlash, key)
 		}
 	}
 }

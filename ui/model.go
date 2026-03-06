@@ -13,6 +13,7 @@ import (
 	"github.com/hieblmi/lntop/app"
 	"github.com/hieblmi/lntop/events"
 	"github.com/hieblmi/lntop/logging"
+	netmodels "github.com/hieblmi/lntop/network/models"
 	"github.com/hieblmi/lntop/ui/models"
 	"github.com/hieblmi/lntop/ui/views"
 )
@@ -274,6 +275,13 @@ func (m *model) handleEvent(e *events.Event) tea.Cmd {
 		cmds = append(cmds, m.loadInfoCmd(), m.loadChannelsBalanceCmd(), m.loadChannelsCmd(), m.loadForwardingHistoryCmd())
 	case events.ChannelPending, events.ChannelActive, events.ChannelInactive:
 		cmds = append(cmds, m.loadInfoCmd(), m.loadChannelsBalanceCmd(), m.loadChannelsCmd())
+	case events.ChannelsUpdated:
+		channels, ok := e.Data.([]*netmodels.Channel)
+		if !ok {
+			m.logger.Error("refresh channels failed: invalid event data")
+			break
+		}
+		m.models.ApplyChannels(channels)
 	case events.InvoiceSettled:
 		cmds = append(cmds, m.loadInfoCmd(), m.loadChannelsBalanceCmd(), m.loadChannelsCmd(), m.loadForwardingHistoryCmd())
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
