@@ -81,7 +81,7 @@ func (m *Models) RefreshInfo(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	*m.Info = Info{info}
+	m.ApplyInfo(info)
 	return nil
 }
 
@@ -91,7 +91,7 @@ func (m *Models) RefreshForwardingHistory(ctx context.Context) error {
 		return err
 	}
 
-	m.FwdingHist.Update(forwardingEvents)
+	m.ApplyForwardingHistory(forwardingEvents)
 
 	return nil
 }
@@ -148,7 +148,7 @@ func (m *Models) RefreshWalletBalance(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	*m.WalletBalance = WalletBalance{balance}
+	m.ApplyWalletBalance(balance)
 	return nil
 }
 
@@ -161,7 +161,7 @@ func (m *Models) RefreshChannelsBalance(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	*m.ChannelsBalance = ChannelsBalance{balance}
+	m.ApplyChannelsBalance(balance)
 	return nil
 }
 
@@ -204,7 +204,53 @@ func (m *Models) RefreshPolicies(update interface{}) func(context.Context) error
 func (m *Models) RefreshCurrentNode(ctx context.Context) (err error) {
 	cur := m.Channels.Current()
 	if cur != nil {
-		m.Channels.CurrentNode, err = m.network.GetNode(ctx, cur.RemotePubKey, true)
+		node, err := m.network.GetNode(ctx, cur.RemotePubKey, true)
+		if err != nil {
+			return err
+		}
+		m.ApplyCurrentNode(node)
 	}
 	return
+}
+
+func (m *Models) ApplyInfo(info *models.Info) {
+	*m.Info = Info{info}
+}
+
+func (m *Models) ApplyWalletBalance(balance *models.WalletBalance) {
+	*m.WalletBalance = WalletBalance{balance}
+}
+
+func (m *Models) ApplyChannelsBalance(balance *models.ChannelsBalance) {
+	*m.ChannelsBalance = ChannelsBalance{balance}
+}
+
+func (m *Models) ApplyTransactions(transactions []*models.Transaction) {
+	for i := range transactions {
+		m.Transactions.Update(transactions[i])
+	}
+}
+
+func (m *Models) ApplyForwardingHistory(events []*models.ForwardingEvent) {
+	m.FwdingHist.Update(events)
+}
+
+func (m *Models) ApplyChannels(channels []*models.Channel) {
+	index := map[string]*models.Channel{}
+	for i := range channels {
+		index[channels[i].ChannelPoint] = channels[i]
+		if !m.Channels.Contains(channels[i]) {
+			m.Channels.Add(channels[i])
+		}
+		m.Channels.Update(channels[i])
+	}
+	for _, c := range m.Channels.List() {
+		if _, ok := index[c.ChannelPoint]; !ok {
+			c.Status = models.ChannelClosed
+		}
+	}
+}
+
+func (m *Models) ApplyCurrentNode(node *models.Node) {
+	m.Channels.CurrentNode = node
 }

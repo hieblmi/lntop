@@ -25,10 +25,19 @@ type model struct {
 
 	width, height int
 
-	activeView string
-	inDetail   bool
-	menuOpen   bool
-	pulseFrame int
+	activeView  string
+	inDetail    bool
+	menuOpen    bool
+	pulseFrame  int
+	pulseActive bool
+
+	infoLoading            bool
+	walletBalanceLoading   bool
+	channelsBalanceLoading bool
+	transactionsLoading    bool
+	forwardingHistLoading  bool
+	channelsLoading        bool
+	currentNodeLoading     bool
 }
 
 func newModel(a *app.App, sub chan *events.Event) *model {
@@ -47,7 +56,7 @@ func (m *model) Init() tea.Cmd {
 	// Load initial data.
 	ctx := context.Background()
 	m.loadInitialData(ctx)
-	return tea.Batch(waitForEvent(m.sub), pulseTickCmd())
+	return tea.Batch(waitForEvent(m.sub), m.ensurePulseTick())
 }
 
 func pulseTickCmd() tea.Cmd {
@@ -91,12 +100,82 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case eventMsg:
-		m.handleEvent(msg.event)
-		return m, waitForEvent(m.sub)
+		return m, tea.Batch(waitForEvent(m.sub), m.handleEvent(msg.event), m.ensurePulseTick())
 
 	case pulseTickMsg:
 		m.pulseFrame++
-		return m, pulseTickCmd()
+		if m.shouldAnimate() {
+			m.pulseActive = true
+			return m, pulseTickCmd()
+		}
+		m.pulseActive = false
+		return m, nil
+
+	case infoLoadedMsg:
+		m.infoLoading = false
+		if msg.err != nil {
+			m.logger.Error("refresh info failed", logging.Error(msg.err))
+			return m, nil
+		}
+		m.models.ApplyInfo(msg.info)
+		return m, m.ensurePulseTick()
+
+	case walletBalanceLoadedMsg:
+		m.walletBalanceLoading = false
+		if msg.err != nil {
+			m.logger.Error("refresh wallet balance failed", logging.Error(msg.err))
+			return m, nil
+		}
+		m.models.ApplyWalletBalance(msg.balance)
+		return m, nil
+
+	case channelsBalanceLoadedMsg:
+		m.channelsBalanceLoading = false
+		if msg.err != nil {
+			m.logger.Error("refresh channels balance failed", logging.Error(msg.err))
+			return m, nil
+		}
+		m.models.ApplyChannelsBalance(msg.balance)
+		return m, nil
+
+	case transactionsLoadedMsg:
+		m.transactionsLoading = false
+		if msg.err != nil {
+			m.logger.Error("refresh transactions failed", logging.Error(msg.err))
+			return m, nil
+		}
+		m.models.ApplyTransactions(msg.transactions)
+		return m, nil
+
+	case forwardingHistoryLoadedMsg:
+		m.forwardingHistLoading = false
+		if msg.err != nil {
+			m.logger.Error("refresh forwarding history failed", logging.Error(msg.err))
+			return m, nil
+		}
+		m.models.ApplyForwardingHistory(msg.events)
+		return m, nil
+
+	case channelsLoadedMsg:
+		m.channelsLoading = false
+		if msg.err != nil {
+			m.logger.Error("refresh channels failed", logging.Error(msg.err))
+			return m, nil
+		}
+		m.models.ApplyChannels(msg.channels)
+		return m, nil
+
+	case currentNodeLoadedMsg:
+		m.currentNodeLoading = false
+		if msg.err != nil {
+			m.logger.Error("refresh current node failed", logging.Error(msg.err))
+			return m, nil
+		}
+		cur := m.models.Channels.Current()
+		if cur != nil && cur.RemotePubKey == msg.pubkey {
+			m.models.ApplyCurrentNode(msg.node)
+		}
+		return m, nil
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -104,40 +183,43 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *model) handleEvent(e *events.Event) {
+func (m *model) handleEvent(e *events.Event) tea.Cmd {
 	m.logger.Debug("event received", logging.String("type", e.Type))
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	refresh := func(fns ...func(context.Context) error) {
-		for _, fn := range fns {
-			if err := fn(ctx); err != nil {
-				m.logger.Error("refresh failed", logging.Error(err))
-			}
-		}
-	}
-
+	var cmds []tea.Cmd
 	switch e.Type {
 	case events.TransactionCreated:
-		refresh(m.models.RefreshInfo, m.models.RefreshWalletBalance, m.models.RefreshTransactions)
+		cmds = append(cmds, m.loadInfoCmd(), m.loadWalletBalanceCmd(), m.loadTransactionsCmd())
 	case events.BlockReceived:
-		refresh(m.models.RefreshInfo, m.models.RefreshTransactions)
+		cmds = append(cmds, m.loadInfoCmd(), m.loadTransactionsCmd())
 	case events.WalletBalanceUpdated:
-		refresh(m.models.RefreshInfo, m.models.RefreshWalletBalance, m.models.RefreshTransactions, m.models.RefreshForwardingHistory)
+		cmds = append(cmds, m.loadInfoCmd(), m.loadWalletBalanceCmd(), m.loadTransactionsCmd(), m.loadForwardingHistoryCmd())
 	case events.ChannelBalanceUpdated:
-		refresh(m.models.RefreshInfo, m.models.RefreshChannelsBalance, m.models.RefreshChannels, m.models.RefreshForwardingHistory)
+		cmds = append(cmds, m.loadInfoCmd(), m.loadChannelsBalanceCmd(), m.loadChannelsCmd(), m.loadForwardingHistoryCmd())
 	case events.ChannelPending, events.ChannelActive, events.ChannelInactive:
-		refresh(m.models.RefreshInfo, m.models.RefreshChannelsBalance, m.models.RefreshChannels)
+		cmds = append(cmds, m.loadInfoCmd(), m.loadChannelsBalanceCmd(), m.loadChannelsCmd())
 	case events.InvoiceSettled:
-		refresh(m.models.RefreshInfo, m.models.RefreshChannelsBalance, m.models.RefreshChannels,
-			m.models.RefreshForwardingHistory, m.models.RefreshReceived(e.Data))
+		cmds = append(cmds, m.loadInfoCmd(), m.loadChannelsBalanceCmd(), m.loadChannelsCmd(), m.loadForwardingHistoryCmd())
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := m.models.RefreshReceived(e.Data)(ctx); err != nil {
+			m.logger.Error("refresh received failed", logging.Error(err))
+		}
 	case events.PeerUpdated:
-		refresh(m.models.RefreshInfo, m.models.RefreshForwardingHistory)
+		cmds = append(cmds, m.loadInfoCmd(), m.loadForwardingHistoryCmd())
 	case events.RoutingEventUpdated:
-		refresh(m.models.RefreshRouting(e.Data))
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := m.models.RefreshRouting(e.Data)(ctx); err != nil {
+			m.logger.Error("refresh routing failed", logging.Error(err))
+		}
 	case events.GraphUpdated:
-		refresh(m.models.RefreshPolicies(e.Data))
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := m.models.RefreshPolicies(e.Data)(ctx); err != nil {
+			m.logger.Error("refresh policies failed", logging.Error(err))
+		}
 	}
+	return tea.Batch(cmds...)
 }
 
 func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -158,21 +240,24 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.views.Menu.SetCurrent(m.activeView)
 			m.menuOpen = true
 		}
-		return m, tea.ClearScreen
+		return m, tea.Batch(tea.ClearScreen, m.ensurePulseTick())
 	}
 
 	// If menu is open, handle menu navigation.
 	if m.menuOpen {
-		return m.handleMenuKey(msg)
+		next, cmd := m.handleMenuKey(msg)
+		return next, tea.Batch(cmd, m.ensurePulseTick())
 	}
 
 	// If in detail view, handle detail navigation.
 	if m.inDetail {
-		return m.handleDetailKey(msg)
+		next, cmd := m.handleDetailKey(msg)
+		return next, tea.Batch(cmd, m.ensurePulseTick())
 	}
 
 	// Table view navigation.
-	return m.handleTableKey(msg)
+	next, cmd := m.handleTableKey(msg)
+	return next, tea.Batch(cmd, m.ensurePulseTick())
 }
 
 func (m *model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -213,9 +298,10 @@ func (m *model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "c":
 		if m.activeView == views.CHANNELS {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = m.models.RefreshCurrentNode(ctx)
+			cur := m.models.Channels.Current()
+			if cur != nil {
+				return m, m.loadCurrentNodeCmd(cur.RemotePubKey)
+			}
 		}
 	}
 	return m, nil
@@ -243,17 +329,23 @@ func (m *model) handleTableKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pageUp(pageSize)
 	case "enter":
 		m.onEnter()
+		if m.activeView == views.CHANNELS {
+			if cur := m.models.Channels.Current(); cur != nil {
+				return m, m.loadCurrentNodeCmd(cur.RemotePubKey)
+			}
+		}
 	case "a":
 		m.sort(models.Asc)
 	case "d":
 		m.sort(models.Desc)
 	case "c":
 		if m.activeView == views.CHANNELS {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
 			idx := m.views.Channels.Index()
 			m.models.Channels.SetCurrent(idx)
-			_ = m.models.RefreshCurrentNode(ctx)
+			cur := m.models.Channels.Current()
+			if cur != nil {
+				return m, m.loadCurrentNodeCmd(cur.RemotePubKey)
+			}
 		}
 	}
 	return m, nil
@@ -395,14 +487,10 @@ func (m *model) sort(order models.Order) {
 }
 
 func (m *model) onEnter() {
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-
 	switch m.activeView {
 	case views.CHANNELS:
 		idx := m.views.Channels.Index()
 		m.models.Channels.SetCurrent(idx)
-		_ = m.models.RefreshCurrentNode(ctx)
 		m.views.Channel.Offset = 0
 		m.inDetail = true
 	case views.TRANSACTIONS:
@@ -415,9 +503,11 @@ func (m *model) onEnter() {
 
 // mainHeight returns the height available for the main content area.
 func (m *model) mainHeight() int {
-	renderW := m.renderWidth()
-	// We compute the actual summary height dynamically.
-	summaryLines := strings.Count(m.views.Summary.Render(renderW), "\n") + 1
+	return m.mainHeightForSummary(m.views.Summary.Render(m.renderWidth()))
+}
+
+func (m *model) mainHeightForSummary(summary string) int {
+	summaryLines := strings.Count(summary, "\n") + 1
 	// header(1) + blank(1) + summary.
 	used := 1 + 1 + summaryLines
 	h := m.height - used
@@ -453,7 +543,7 @@ func (m *model) View() string {
 	summary := m.views.Summary.Render(renderW)
 
 	// Main area.
-	mainH := m.mainHeight()
+	mainH := m.mainHeightForSummary(summary)
 	if mainH < 3 {
 		mainH = 3
 	}
@@ -508,6 +598,90 @@ func (m *model) View() string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+func (m *model) shouldAnimate() bool {
+	if m.inDetail {
+		return false
+	}
+	return m.currentTableView() == views.CHANNELS && m.views.Channels.HasAnimatedAlerts()
+}
+
+func (m *model) ensurePulseTick() tea.Cmd {
+	if m.pulseActive || !m.shouldAnimate() {
+		return nil
+	}
+	m.pulseActive = true
+	return pulseTickCmd()
+}
+
+func (m *model) loadInfoCmd() tea.Cmd {
+	if m.infoLoading {
+		return nil
+	}
+	m.infoLoading = true
+	return loadInfoCmd(m.app.Network)
+}
+
+func (m *model) loadWalletBalanceCmd() tea.Cmd {
+	if m.walletBalanceLoading {
+		return nil
+	}
+	m.walletBalanceLoading = true
+	return loadWalletBalanceCmd(m.app.Network)
+}
+
+func (m *model) loadChannelsBalanceCmd() tea.Cmd {
+	if m.channelsBalanceLoading {
+		return nil
+	}
+	m.channelsBalanceLoading = true
+	return loadChannelsBalanceCmd(m.app.Network)
+}
+
+func (m *model) loadTransactionsCmd() tea.Cmd {
+	if m.transactionsLoading {
+		return nil
+	}
+	m.transactionsLoading = true
+	return loadTransactionsCmd(m.app.Network)
+}
+
+func (m *model) loadForwardingHistoryCmd() tea.Cmd {
+	if m.forwardingHistLoading {
+		return nil
+	}
+	m.forwardingHistLoading = true
+	return loadForwardingHistoryCmd(m.app.Network, m.models.FwdingHist.StartTime, m.models.FwdingHist.MaxNumEvents)
+}
+
+func (m *model) loadChannelsCmd() tea.Cmd {
+	if m.channelsLoading || m.models.Info == nil || m.models.Info.Info == nil {
+		return nil
+	}
+	m.channelsLoading = true
+	return loadChannelsCmd(m.app.Network, m.logger, m.models.Info.BlockHeight, m.channelSnapshot())
+}
+
+func (m *model) loadCurrentNodeCmd(pubkey string) tea.Cmd {
+	if pubkey == "" || m.currentNodeLoading {
+		return nil
+	}
+	m.currentNodeLoading = true
+	return loadCurrentNodeCmd(m.app.Network, pubkey)
+}
+
+func (m *model) channelSnapshot() map[string]channelSnapshot {
+	snapshot := make(map[string]channelSnapshot, m.models.Channels.Len())
+	for _, ch := range m.models.Channels.List() {
+		snapshot[ch.ChannelPoint] = channelSnapshot{
+			updatesCount:    ch.UpdatesCount,
+			hasLastUpdate:   ch.LastUpdate != nil,
+			hasLocalPolicy:  ch.LocalPolicy != nil,
+			hasRemotePolicy: ch.RemotePolicy != nil,
+		}
+	}
+	return snapshot
 }
 
 func (m *model) currentTableView() string {

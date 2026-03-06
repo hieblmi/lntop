@@ -136,17 +136,15 @@ func gaugeTotal(balance int64, channels []*netmodels.Channel) string {
 		if i < filled {
 			// Gradient from green (low) through yellow to red (high local balance).
 			ratio := float64(i) / 20.0
-			var c lipgloss.Color
 			if ratio < 0.5 {
-				c = lipgloss.Color("#22c55e") // green
+				buffer.WriteString(gaugeGreenStyle.Render("\u2588"))
 			} else if ratio < 0.75 {
-				c = lipgloss.Color("#eab308") // yellow
+				buffer.WriteString(gaugeYellowStyle.Render("\u2588"))
 			} else {
-				c = lipgloss.Color("#ef4444") // red
+				buffer.WriteString(gaugeRedStyle.Render("\u2588"))
 			}
-			buffer.WriteString(lipgloss.NewStyle().Foreground(c).Render("\u2588"))
 		} else {
-			buffer.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#333333")).Render("\u2591"))
+			buffer.WriteString(gaugeEmptyStyle.Render("\u2591"))
 		}
 	}
 	return fmt.Sprintf("%s %2d%%", buffer.String(), balance*100/capacity)

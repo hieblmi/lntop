@@ -99,6 +99,18 @@ var (
 	footerDescStyle = lipgloss.NewStyle().
 			Background(lipgloss.Color("#1e1b4b")).
 			Foreground(lipgloss.Color("#94a3b8"))
+
+	gaugeGreenStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#22c55e"))
+
+	gaugeYellowStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#eab308"))
+
+	gaugeRedStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#ef4444"))
+
+	gaugeEmptyStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#333333"))
 )
 
 // ansiRegex strips ANSI escape codes for selected-row rendering.

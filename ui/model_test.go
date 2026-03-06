@@ -5,6 +5,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	netmodels "github.com/hieblmi/lntop/network/models"
+	uimodels "github.com/hieblmi/lntop/ui/models"
 	"github.com/hieblmi/lntop/ui/views"
 )
 
@@ -77,14 +79,43 @@ func TestHandleKeyClosingMenuCommitsPreviewSelection(t *testing.T) {
 }
 
 func TestPulseTickAdvancesFrame(t *testing.T) {
-	m := &model{}
+	channelModel := uimodels.NewChannels()
+	m := &model{
+		activeView: views.CHANNELS,
+		views: &views.Views{
+			Channels: views.NewChannels(nil, channelModel),
+		},
+	}
 
 	_, cmd := m.Update(pulseTickMsg{})
 
 	if m.pulseFrame != 1 {
 		t.Fatalf("pulseFrame = %d, want 1", m.pulseFrame)
 	}
+	if cmd != nil {
+		t.Fatalf("expected no follow-up pulse tick when no animation is active")
+	}
+}
+
+func TestEnsurePulseTickStartsWhenChannelAlertsActive(t *testing.T) {
+	channelModel := uimodels.NewChannels()
+	channelModel.Add(&netmodels.Channel{
+		ChannelPoint:     "chan-1",
+		UnsettledBalance: 1,
+	})
+
+	m := &model{
+		activeView: views.CHANNELS,
+		views: &views.Views{
+			Channels: views.NewChannels(nil, channelModel),
+		},
+	}
+
+	cmd := m.ensurePulseTick()
 	if cmd == nil {
-		t.Fatalf("expected next pulse tick cmd")
+		t.Fatalf("expected pulse tick cmd when channel alerts are active")
+	}
+	if !m.pulseActive {
+		t.Fatalf("expected pulseActive to be set")
 	}
 }

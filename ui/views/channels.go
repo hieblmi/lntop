@@ -107,6 +107,18 @@ func (c *Channels) SetPulseFrame(frame int) {
 	c.pulseFrame = frame
 }
 
+func (c *Channels) HasAnimatedAlerts() bool {
+	if len(c.htlcBlink) > 0 || len(c.unsettledBlink) > 0 {
+		return true
+	}
+	for _, ch := range c.channels.List() {
+		if len(ch.PendingHTLC) > 0 || ch.UnsettledBalance > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Channels) Sort(column string, order models.Order) {
 	index := c.ColCursor
 	if index >= len(c.columns) {
@@ -263,17 +275,15 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 					for i := 0; i < 15; i++ {
 						if i < filled {
 							ratio := float64(i) / 15.0
-							var cl lipgloss.Color
 							if ratio < 0.5 {
-								cl = lipgloss.Color("#22c55e")
+								buf.WriteString(gaugeGreenStyle.Render("\u2588"))
 							} else if ratio < 0.75 {
-								cl = lipgloss.Color("#eab308")
+								buf.WriteString(gaugeYellowStyle.Render("\u2588"))
 							} else {
-								cl = lipgloss.Color("#ef4444")
+								buf.WriteString(gaugeRedStyle.Render("\u2588"))
 							}
-							buf.WriteString(lipgloss.NewStyle().Foreground(cl).Render("\u2588"))
 						} else {
-							buf.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#333333")).Render("\u2591"))
+							buf.WriteString(gaugeEmptyStyle.Render("\u2591"))
 						}
 					}
 					return fmt.Sprintf("%s %2d%%", buf.String(), c.LocalBalance*100/c.Capacity)
