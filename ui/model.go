@@ -139,6 +139,9 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Menu toggle.
 	if msg.String() == "f2" || msg.String() == "m" {
 		if m.menuOpen {
+			if preview := m.views.Menu.Current(); preview != "" {
+				m.activeView = preview
+			}
 			m.menuOpen = false
 		} else {
 			m.views.Menu.SetCurrent(m.activeView)

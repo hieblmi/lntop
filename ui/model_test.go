@@ -52,3 +52,26 @@ func TestHandleMenuEnterCommitsSelection(t *testing.T) {
 		t.Fatalf("menu should close after enter")
 	}
 }
+
+func TestHandleKeyClosingMenuCommitsPreviewSelection(t *testing.T) {
+	menu := views.NewMenu()
+	menu.SetCurrent(views.CHANNELS)
+	menu.CursorDown()
+
+	m := &model{
+		activeView: views.CHANNELS,
+		menuOpen:   true,
+		views: &views.Views{
+			Menu: menu,
+		},
+	}
+
+	_, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyF2})
+
+	if m.activeView != views.TRANSACTIONS {
+		t.Fatalf("activeView = %q, want %q", m.activeView, views.TRANSACTIONS)
+	}
+	if m.menuOpen {
+		t.Fatalf("menu should close after F2")
+	}
+}
