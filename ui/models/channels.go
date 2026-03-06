@@ -75,6 +75,9 @@ func (c *Channels) Add(channel *models.Channel) {
 	}
 	c.index[channel.ChannelPoint] = channel
 	c.list = append(c.list, channel)
+	if c.sort != nil {
+		sort.Sort(c)
+	}
 }
 
 func (c *Channels) Update(newChannel *models.Channel) {
@@ -83,7 +86,8 @@ func (c *Channels) Update(newChannel *models.Channel) {
 
 	oldChannel, ok := c.index[newChannel.ChannelPoint]
 	if !ok {
-		c.Add(newChannel)
+		c.index[newChannel.ChannelPoint] = newChannel
+		c.list = append(c.list, newChannel)
 		if c.sort != nil {
 			sort.Sort(c)
 		}
@@ -117,6 +121,10 @@ func (c *Channels) Update(newChannel *models.Channel) {
 
 	if newChannel.RemotePolicy != nil {
 		oldChannel.RemotePolicy = newChannel.RemotePolicy
+	}
+
+	if c.sort != nil {
+		sort.Sort(c)
 	}
 }
 

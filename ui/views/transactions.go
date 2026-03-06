@@ -226,6 +226,11 @@ func NewTransactions(cfg *config.View, txs *models.Transactions) *Transactions {
 		case "TXHASH":
 			transactions.columns[i] = transactionsColumn{
 				name: fmt.Sprintf("%-64s", columns[i]), width: 64,
+				sort: func(order models.Order) models.TransactionsSort {
+					return func(tx1, tx2 *netmodels.Transaction) bool {
+						return models.StringSort(tx1.TxHash, tx2.TxHash, order)
+					}
+				},
 				display: func(tx *netmodels.Transaction, opts ...color.Option) string {
 					return color.White(opts...)(fmt.Sprintf("%13s", tx.TxHash))
 				},
@@ -233,8 +238,13 @@ func NewTransactions(cfg *config.View, txs *models.Transactions) *Transactions {
 		case "BLOCKHASH":
 			transactions.columns[i] = transactionsColumn{
 				name: fmt.Sprintf("%-64s", columns[i]), width: 64,
+				sort: func(order models.Order) models.TransactionsSort {
+					return func(tx1, tx2 *netmodels.Transaction) bool {
+						return models.StringSort(tx1.BlockHash, tx2.BlockHash, order)
+					}
+				},
 				display: func(tx *netmodels.Transaction, opts ...color.Option) string {
-					return color.White(opts...)(fmt.Sprintf("%13s", tx.TxHash))
+					return color.White(opts...)(fmt.Sprintf("%13s", tx.BlockHash))
 				},
 			}
 		default:

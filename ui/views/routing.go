@@ -22,6 +22,8 @@ var DefaultRoutingColumns = []string{
 type routingColumn struct {
 	name    string
 	width   int
+	sorted  bool
+	sort    func(models.Order) models.RoutingSort
 	display func(*netmodels.RoutingEvent, ...color.Option) string
 }
 
@@ -60,6 +62,20 @@ func (c *Routing) End()            { c.Cursor = c.maxIndex() }
 func (c *Routing) PageDown(ps int) { c.Cursor = min(c.Cursor+ps, c.maxIndex()) }
 func (c *Routing) PageUp(ps int)   { c.Cursor = max(0, c.Cursor-ps) }
 
+func (c *Routing) Sort(column string, order models.Order) {
+	if c.ColCursor >= len(c.columns) {
+		return
+	}
+	col := c.columns[c.ColCursor]
+	if col.sort == nil {
+		return
+	}
+	c.routingEvents.Sort(col.sort(order))
+	for i := range c.columns {
+		c.columns[i].sorted = (i == c.ColCursor)
+	}
+}
+
 func (c *Routing) maxIndex() int {
 	n := len(c.routingEvents.Log)
 	if n == 0 {
@@ -77,6 +93,8 @@ func (c *Routing) Render(width, height int) string {
 		name := renderHeaderCell(col.name, col.width, DefaultColStyle)
 		if i == c.ColCursor {
 			name = renderHeaderCell(col.name, col.width, ActiveColStyle)
+		} else if col.sorted {
+			name = renderHeaderCell(col.name, col.width, SortedColStyle)
 		}
 		hdr.WriteString(name)
 		hdr.WriteString(" ")
@@ -139,13 +157,36 @@ func NewRouting(cfg *config.View, routingEvents *models.RoutingLog, channels *mo
 	for i := range columns {
 		switch columns[i] {
 		case "DIR":
-			routing.columns[i] = routingColumn{width: 4, name: fmt.Sprintf("%-4s", columns[i]), display: rdirection}
+			routing.columns[i] = routingColumn{width: 4, name: fmt.Sprintf("%-4s", columns[i]),
+				sort: func(order models.Order) models.RoutingSort {
+					return func(a, b *netmodels.RoutingEvent) bool {
+						return models.IntSort(a.Direction, b.Direction, order)
+					}
+				},
+				display: rdirection}
 		case "STATUS":
-			routing.columns[i] = routingColumn{width: 8, name: fmt.Sprintf("%-8s", columns[i]), display: rstatus}
+			routing.columns[i] = routingColumn{width: 8, name: fmt.Sprintf("%-8s", columns[i]),
+				sort: func(order models.Order) models.RoutingSort {
+					return func(a, b *netmodels.RoutingEvent) bool {
+						return models.IntSort(a.Status, b.Status, order)
+					}
+				},
+				display: rstatus}
 		case "IN_ALIAS":
-			routing.columns[i] = routingColumn{width: 25, name: fmt.Sprintf("%-25s", columns[i]), display: ralias(channels, false)}
+			routing.columns[i] = routingColumn{width: 25, name: fmt.Sprintf("%-25s", columns[i]),
+				sort: func(order models.Order) models.RoutingSort {
+					return func(a, b *netmodels.RoutingEvent) bool {
+						return models.StringSort(routingAlias(channels, a.IncomingChannelId), routingAlias(channels, b.IncomingChannelId), order)
+					}
+				},
+				display: ralias(channels, false)}
 		case "IN_CHANNEL":
 			routing.columns[i] = routingColumn{width: 19, name: fmt.Sprintf("%19s", columns[i]),
+				sort: func(order models.Order) models.RoutingSort {
+					return func(a, b *netmodels.RoutingEvent) bool {
+						return models.UInt64Sort(a.IncomingChannelId, b.IncomingChannelId, order)
+					}
+				},
 				display: func(c *netmodels.RoutingEvent, opts ...color.Option) string {
 					if c.IncomingChannelId == 0 {
 						return fmt.Sprintf("%19s", "")
@@ -154,6 +195,11 @@ func NewRouting(cfg *config.View, routingEvents *models.RoutingLog, channels *mo
 				}}
 		case "IN_SCID":
 			routing.columns[i] = routingColumn{width: 14, name: fmt.Sprintf("%14s", columns[i]),
+				sort: func(order models.Order) models.RoutingSort {
+					return func(a, b *netmodels.RoutingEvent) bool {
+						return models.UInt64Sort(a.IncomingChannelId, b.IncomingChannelId, order)
+					}
+				},
 				display: func(c *netmodels.RoutingEvent, opts ...color.Option) string {
 					if c.IncomingChannelId == 0 {
 						return fmt.Sprintf("%14s", "")
@@ -162,6 +208,11 @@ func NewRouting(cfg *config.View, routingEvents *models.RoutingLog, channels *mo
 				}}
 		case "IN_TIMELOCK":
 			routing.columns[i] = routingColumn{width: 10, name: fmt.Sprintf("%10s", columns[i]),
+				sort: func(order models.Order) models.RoutingSort {
+					return func(a, b *netmodels.RoutingEvent) bool {
+						return models.UInt32Sort(a.IncomingTimelock, b.IncomingTimelock, order)
+					}
+				},
 				display: func(c *netmodels.RoutingEvent, opts ...color.Option) string {
 					if c.IncomingTimelock == 0 {
 						return fmt.Sprintf("%10s", "")
@@ -170,6 +221,11 @@ func NewRouting(cfg *config.View, routingEvents *models.RoutingLog, channels *mo
 				}}
 		case "IN_HTLC":
 			routing.columns[i] = routingColumn{width: 10, name: fmt.Sprintf("%10s", columns[i]),
+				sort: func(order models.Order) models.RoutingSort {
+					return func(a, b *netmodels.RoutingEvent) bool {
+						return models.UInt64Sort(a.IncomingHtlcId, b.IncomingHtlcId, order)
+					}
+				},
 				display: func(c *netmodels.RoutingEvent, opts ...color.Option) string {
 					if c.IncomingHtlcId == 0 {
 						return fmt.Sprintf("%10s", "")
@@ -177,9 +233,20 @@ func NewRouting(cfg *config.View, routingEvents *models.RoutingLog, channels *mo
 					return color.White(opts...)(fmt.Sprintf("%10d", c.IncomingHtlcId))
 				}}
 		case "OUT_ALIAS":
-			routing.columns[i] = routingColumn{width: 25, name: fmt.Sprintf("%-25s", columns[i]), display: ralias(channels, true)}
+			routing.columns[i] = routingColumn{width: 25, name: fmt.Sprintf("%-25s", columns[i]),
+				sort: func(order models.Order) models.RoutingSort {
+					return func(a, b *netmodels.RoutingEvent) bool {
+						return models.StringSort(routingAlias(channels, a.OutgoingChannelId), routingAlias(channels, b.OutgoingChannelId), order)
+					}
+				},
+				display: ralias(channels, true)}
 		case "OUT_CHANNEL":
 			routing.columns[i] = routingColumn{width: 19, name: fmt.Sprintf("%19s", columns[i]),
+				sort: func(order models.Order) models.RoutingSort {
+					return func(a, b *netmodels.RoutingEvent) bool {
+						return models.UInt64Sort(a.OutgoingChannelId, b.OutgoingChannelId, order)
+					}
+				},
 				display: func(c *netmodels.RoutingEvent, opts ...color.Option) string {
 					if c.OutgoingChannelId == 0 {
 						return fmt.Sprintf("%19s", "")
@@ -188,6 +255,11 @@ func NewRouting(cfg *config.View, routingEvents *models.RoutingLog, channels *mo
 				}}
 		case "OUT_SCID":
 			routing.columns[i] = routingColumn{width: 14, name: fmt.Sprintf("%14s", columns[i]),
+				sort: func(order models.Order) models.RoutingSort {
+					return func(a, b *netmodels.RoutingEvent) bool {
+						return models.UInt64Sort(a.OutgoingChannelId, b.OutgoingChannelId, order)
+					}
+				},
 				display: func(c *netmodels.RoutingEvent, opts ...color.Option) string {
 					if c.OutgoingChannelId == 0 {
 						return fmt.Sprintf("%14s", "")
@@ -196,6 +268,11 @@ func NewRouting(cfg *config.View, routingEvents *models.RoutingLog, channels *mo
 				}}
 		case "OUT_TIMELOCK":
 			routing.columns[i] = routingColumn{width: 10, name: fmt.Sprintf("%10s", columns[i]),
+				sort: func(order models.Order) models.RoutingSort {
+					return func(a, b *netmodels.RoutingEvent) bool {
+						return models.UInt32Sort(a.OutgoingTimelock, b.OutgoingTimelock, order)
+					}
+				},
 				display: func(c *netmodels.RoutingEvent, opts ...color.Option) string {
 					if c.OutgoingTimelock == 0 {
 						return fmt.Sprintf("%10s", "")
@@ -204,6 +281,11 @@ func NewRouting(cfg *config.View, routingEvents *models.RoutingLog, channels *mo
 				}}
 		case "OUT_HTLC":
 			routing.columns[i] = routingColumn{width: 10, name: fmt.Sprintf("%10s", columns[i]),
+				sort: func(order models.Order) models.RoutingSort {
+					return func(a, b *netmodels.RoutingEvent) bool {
+						return models.UInt64Sort(a.OutgoingHtlcId, b.OutgoingHtlcId, order)
+					}
+				},
 				display: func(c *netmodels.RoutingEvent, opts ...color.Option) string {
 					if c.OutgoingHtlcId == 0 {
 						return fmt.Sprintf("%10s", "")
@@ -212,27 +294,60 @@ func NewRouting(cfg *config.View, routingEvents *models.RoutingLog, channels *mo
 				}}
 		case "AMOUNT":
 			routing.columns[i] = routingColumn{width: 12, name: fmt.Sprintf("%12s", columns[i]),
+				sort: func(order models.Order) models.RoutingSort {
+					return func(a, b *netmodels.RoutingEvent) bool {
+						return models.UInt64Sort(a.AmountMsat, b.AmountMsat, order)
+					}
+				},
 				display: func(c *netmodels.RoutingEvent, opts ...color.Option) string {
 					return color.Yellow(opts...)(printer.Sprintf("%12d", c.AmountMsat/1000))
 				}}
 		case "FEE":
 			routing.columns[i] = routingColumn{width: 8, name: fmt.Sprintf("%8s", columns[i]),
+				sort: func(order models.Order) models.RoutingSort {
+					return func(a, b *netmodels.RoutingEvent) bool {
+						return models.UInt64Sort(a.FeeMsat, b.FeeMsat, order)
+					}
+				},
 				display: func(c *netmodels.RoutingEvent, opts ...color.Option) string {
 					return color.Yellow(opts...)(printer.Sprintf("%8d", c.FeeMsat/1000))
 				}}
 		case "LAST UPDATE":
 			routing.columns[i] = routingColumn{width: 15, name: fmt.Sprintf("%-15s", columns[i]),
+				sort: func(order models.Order) models.RoutingSort {
+					return func(a, b *netmodels.RoutingEvent) bool {
+						at, bt := a.LastUpdate, b.LastUpdate
+						return models.DateSort(&at, &bt, order)
+					}
+				},
 				display: func(c *netmodels.RoutingEvent, opts ...color.Option) string {
 					return color.Cyan(opts...)(fmt.Sprintf("%15s", c.LastUpdate.Format("15:04:05 Jan _2")))
 				}}
 		case "INBOUND_BASE_IN":
 			routing.columns[i] = routingColumn{width: 14, name: fmt.Sprintf("%14s", columns[i]),
+				sort: func(order models.Order) models.RoutingSort {
+					return func(a, b *netmodels.RoutingEvent) bool {
+						return models.Int32Sort(routingInboundFee(channels, a.IncomingChannelId, func(p *netmodels.RoutingPolicy) int32 { return p.InboundFeeBaseMsat }),
+							routingInboundFee(channels, b.IncomingChannelId, func(p *netmodels.RoutingPolicy) int32 { return p.InboundFeeBaseMsat }), order)
+					}
+				},
 				display: rinboundFee(channels, func(p *netmodels.RoutingPolicy) int32 { return p.InboundFeeBaseMsat })}
 		case "INBOUND_RATE_IN":
 			routing.columns[i] = routingColumn{width: 14, name: fmt.Sprintf("%14s", columns[i]),
+				sort: func(order models.Order) models.RoutingSort {
+					return func(a, b *netmodels.RoutingEvent) bool {
+						return models.Int32Sort(routingInboundFee(channels, a.IncomingChannelId, func(p *netmodels.RoutingPolicy) int32 { return p.InboundFeeRateMilliMsat }),
+							routingInboundFee(channels, b.IncomingChannelId, func(p *netmodels.RoutingPolicy) int32 { return p.InboundFeeRateMilliMsat }), order)
+					}
+				},
 				display: rinboundFee(channels, func(p *netmodels.RoutingPolicy) int32 { return p.InboundFeeRateMilliMsat })}
 		case "DETAIL":
 			routing.columns[i] = routingColumn{width: 80, name: fmt.Sprintf("%-80s", columns[i]),
+				sort: func(order models.Order) models.RoutingSort {
+					return func(a, b *netmodels.RoutingEvent) bool {
+						return models.StringSort(a.FailureDetail, b.FailureDetail, order)
+					}
+				},
 				display: func(c *netmodels.RoutingEvent, opts ...color.Option) string {
 					return color.Cyan(opts...)(fmt.Sprintf("%-80s", c.FailureDetail))
 				}}
@@ -275,13 +390,30 @@ func rinboundFee(channels *models.Channels, extract func(*netmodels.RoutingPolic
 		if c.IncomingChannelId == 0 {
 			return fmt.Sprintf("%14s", "")
 		}
-		for _, ch := range channels.List() {
-			if ch.ID == c.IncomingChannelId && ch.LocalPolicy != nil {
-				return color.White(opts...)(fmt.Sprintf("%14d", extract(ch.LocalPolicy)))
-			}
-		}
-		return fmt.Sprintf("%14d", 0)
+		return color.White(opts...)(fmt.Sprintf("%14d", routingInboundFee(channels, c.IncomingChannelId, extract)))
 	}
+}
+
+func routingInboundFee(channels *models.Channels, channelID uint64, extract func(*netmodels.RoutingPolicy) int32) int32 {
+	for _, ch := range channels.List() {
+		if ch.ID == channelID && ch.LocalPolicy != nil {
+			return extract(ch.LocalPolicy)
+		}
+	}
+	return 0
+}
+
+func routingAlias(channels *models.Channels, channelID uint64) string {
+	if channelID == 0 {
+		return ""
+	}
+	for _, ch := range channels.List() {
+		if ch.ID == channelID {
+			alias, _ := ch.ShortAlias()
+			return alias
+		}
+	}
+	return ""
 }
 
 func ralias(channels *models.Channels, out bool) func(*netmodels.RoutingEvent, ...color.Option) string {
@@ -293,7 +425,7 @@ func ralias(channels *models.Channels, out bool) func(*netmodels.RoutingEvent, .
 		if id == 0 {
 			return color.White(opts...)(fmt.Sprintf("%-25s", ""))
 		}
-		var alias string
+		alias := ""
 		var forced bool
 		aliasColor := color.White(opts...)
 		for _, ch := range channels.List() {

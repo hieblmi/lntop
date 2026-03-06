@@ -371,6 +371,8 @@ func (m *model) sort(order models.Order) {
 		m.views.Channels.Sort("", order)
 	case views.TRANSACTIONS:
 		m.views.Transactions.Sort("", order)
+	case views.ROUTING:
+		m.views.Routing.Sort("", order)
 	case views.FWDINGHIST:
 		m.views.FwdingHist.Sort("", order)
 	case views.RECEIVED:

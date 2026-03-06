@@ -62,4 +62,7 @@ func (t *FwdingHist) Update(events []*models.ForwardingEvent) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.list = events
+	if t.sort != nil {
+		sort.Sort(t)
+	}
 }

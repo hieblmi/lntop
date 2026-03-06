@@ -151,7 +151,7 @@ func NewFwdingHist(cfg *config.View, hist *models.FwdingHist, channels *models.C
 			fh.columns[i] = fwdinghistColumn{width: 30, name: fmt.Sprintf("%30s", columns[i]),
 				sort: func(order models.Order) models.FwdinghistSort {
 					return func(e1, e2 *netmodels.ForwardingEvent) bool {
-						return models.StringSort(e1.PeerAliasIn, e2.PeerAliasOut, order)
+						return models.StringSort(e1.PeerAliasIn, e2.PeerAliasIn, order)
 					}
 				},
 				display: func(e *netmodels.ForwardingEvent, opts ...color.Option) string {
@@ -245,6 +245,11 @@ func NewFwdingHist(cfg *config.View, hist *models.FwdingHist, channels *models.C
 				}}
 		case "TIMESTAMP_NS":
 			fh.columns[i] = fwdinghistColumn{name: fmt.Sprintf("%15s", "TIME"), width: 20,
+				sort: func(order models.Order) models.FwdinghistSort {
+					return func(e1, e2 *netmodels.ForwardingEvent) bool {
+						return models.Int64Sort(e1.EventTime.UnixNano(), e2.EventTime.UnixNano(), order)
+					}
+				},
 				display: func(e *netmodels.ForwardingEvent, opts ...color.Option) string {
 					return color.White(opts...)(fmt.Sprintf("%20s", e.EventTime.Format("15:04:05 Jan _2")))
 				}}
