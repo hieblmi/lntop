@@ -42,7 +42,7 @@ type Views struct {
 func New(cfg config.Views, m *models.Models) *Views {
 	return &Views{
 		Header:       NewHeader(m.Info),
-		Summary:      NewSummary(m.Info, m.ChannelsBalance, m.WalletBalance, m.Channels, m.FwdingHist),
+		Summary:      NewSummary(m.Info, m.ChannelsBalance, m.WalletBalance, m.Channels, m.FwdingHist, m.Received),
 		Menu:         NewMenu(),
 		Channels:     NewChannels(cfg.Channels, m.Channels),
 		Channel:      NewChannel(m.Channels),

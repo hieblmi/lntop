@@ -147,7 +147,7 @@ func (c *Routing) Render(width, height int) string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(renderFooter(width, "F2", "Menu", "F9", "Fwd Window", "F10", "Quit"))
+	b.WriteString(renderFooter(width, "F2", "Menu", "F9", "Settings", "F10", "Quit"))
 	return b.String()
 }
 

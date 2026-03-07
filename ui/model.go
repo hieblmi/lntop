@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,17 +35,20 @@ type model struct {
 	pulseFrame  int
 	pulseActive bool
 
-	infoLoading             bool
-	walletBalanceLoading    bool
-	channelsBalanceLoading  bool
-	transactionsLoading     bool
-	forwardingHistLoading   bool
-	forwardingWindowEditing bool
-	forwardingWindowInput   string
-	forwardingWindowErr     string
-	channelsLoading         bool
-	receivedLoading         bool
-	currentNodeLoading      bool
+	infoLoading              bool
+	walletBalanceLoading     bool
+	channelsBalanceLoading   bool
+	transactionsLoading      bool
+	forwardingHistLoading    bool
+	forwardingWindowInput    string
+	forwardingMaxEventsInput string
+	receivedStartDateInput   string
+	settingsOpen             bool
+	settingsCursor           int
+	settingsErr              string
+	channelsLoading          bool
+	receivedLoading          bool
+	currentNodeLoading       bool
 
 	startupActive    bool
 	startupFinishing bool
@@ -66,6 +70,14 @@ var startupTaskLabels = []struct {
 }
 
 var forwardingWindowRE = regexp.MustCompile(`^(|-\d{1,18}[smhdwMy]|\d+)$`)
+var settingsDateRE = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
+const (
+	settingsFieldForwardingWindow = iota
+	settingsFieldForwardingMaxEvents
+	settingsFieldReceivedStartDate
+	settingsFieldCount
+)
 
 func newModel(a *app.App, sub chan *events.Event) *model {
 	m := models.New(a)
@@ -218,7 +230,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case forwardingHistoryLoadedMsg:
 		m.forwardingHistLoading = false
-		if msg.startTime != m.models.FwdingHist.StartTime {
+		if msg.startTime != m.models.FwdingHist.StartTime || msg.maxEvents != m.models.FwdingHist.MaxNumEvents {
 			return m, tea.Batch(m.loadForwardingHistoryCmd(), m.ensurePulseTick())
 		}
 		if msg.err != nil {
@@ -332,18 +344,18 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if msg.String() == "f9" {
-		m.beginForwardingWindowEdit()
+		m.beginSettingsEdit()
 		return m, m.ensurePulseTick()
 	}
 
-	if m.forwardingWindowEditing {
-		return m.handleForwardingWindowKey(msg)
+	if m.settingsOpen {
+		return m.handleSettingsKey(msg)
 	}
 
 	if m.canEditForwardingWindow() {
 		switch msg.String() {
 		case "/", "w":
-			m.beginForwardingWindowEdit()
+			m.beginSettingsEdit()
 			return m, m.ensurePulseTick()
 		}
 	}
@@ -379,32 +391,77 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return next, tea.Batch(cmd, m.ensurePulseTick())
 }
 
-func (m *model) handleForwardingWindowKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		m.cancelForwardingWindowEdit()
+		m.cancelSettingsEdit()
 		return m, nil
 	case "enter":
-		return m, m.applyForwardingWindowEdit()
+		return m, m.applySettingsEdit()
+	case "up", "k", "shift+tab":
+		m.settingsCursor = (m.settingsCursor - 1 + settingsFieldCount) % settingsFieldCount
+		m.settingsErr = ""
+		return m, nil
+	case "down", "j", "tab":
+		m.settingsCursor = (m.settingsCursor + 1) % settingsFieldCount
+		m.settingsErr = ""
+		return m, nil
 	case "backspace", "ctrl+h":
-		runes := []rune(m.forwardingWindowInput)
-		if len(runes) > 0 {
-			m.forwardingWindowInput = string(runes[:len(runes)-1])
+		value := []rune(m.currentSettingsInput())
+		if len(value) > 0 {
+			m.setCurrentSettingsInput(string(value[:len(value)-1]))
 		}
-		m.forwardingWindowErr = ""
+		m.settingsErr = ""
 		return m, nil
 	}
 
 	if msg.Type == tea.KeyRunes {
 		for _, r := range msg.Runes {
-			if strings.ContainsRune("-0123456789smhdwMy", r) {
-				m.forwardingWindowInput += string(r)
-				m.forwardingWindowErr = ""
+			if m.acceptsSettingsRune(r) {
+				m.setCurrentSettingsInput(m.currentSettingsInput() + string(r))
+				m.settingsErr = ""
 			}
 		}
 	}
 
 	return m, nil
+}
+
+func (m *model) acceptsSettingsRune(r rune) bool {
+	switch m.settingsCursor {
+	case settingsFieldForwardingWindow:
+		return strings.ContainsRune("-0123456789smhdwMy", r)
+	case settingsFieldForwardingMaxEvents:
+		return strings.ContainsRune("0123456789", r)
+	case settingsFieldReceivedStartDate:
+		return strings.ContainsRune("0123456789-", r)
+	default:
+		return false
+	}
+}
+
+func (m *model) currentSettingsInput() string {
+	switch m.settingsCursor {
+	case settingsFieldForwardingWindow:
+		return m.forwardingWindowInput
+	case settingsFieldForwardingMaxEvents:
+		return m.forwardingMaxEventsInput
+	case settingsFieldReceivedStartDate:
+		return m.receivedStartDateInput
+	default:
+		return ""
+	}
+}
+
+func (m *model) setCurrentSettingsInput(value string) {
+	switch m.settingsCursor {
+	case settingsFieldForwardingWindow:
+		m.forwardingWindowInput = value
+	case settingsFieldForwardingMaxEvents:
+		m.forwardingMaxEventsInput = value
+	case settingsFieldReceivedStartDate:
+		m.receivedStartDateInput = value
+	}
 }
 
 func (m *model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -750,7 +807,12 @@ func (m *model) View() string {
 		lines = append(lines, strings.Repeat(" ", renderW))
 	}
 
-	return strings.Join(lines, "\n")
+	result = strings.Join(lines, "\n")
+	if m.settingsOpen && m.views != nil && m.views.Summary != nil {
+		result = overlayCentered(result, m.views.Summary.RenderSettingsModal(renderW), renderW, m.height)
+	}
+
+	return result
 }
 
 func (m *model) shouldAnimate() bool {
@@ -1055,15 +1117,17 @@ func (m *model) syncSummaryState() {
 	}
 	if m.views.Summary != nil {
 		m.views.Summary.SetPulseFrame(m.pulseFrame)
-		m.views.Summary.SetForwardingState(
+		m.views.Summary.SetSettingsState(
 			m.forwardingHistLoading,
-			m.forwardingWindowEditing,
-			m.forwardingWindowInput,
-			m.forwardingWindowErr,
+			views.SettingsModalState{
+				Open:                     m.settingsOpen,
+				Cursor:                   m.settingsCursor,
+				Error:                    m.settingsErr,
+				ForwardingWindowInput:    m.forwardingWindowInput,
+				ForwardingMaxEventsInput: m.forwardingMaxEventsInput,
+				ReceivedStartDateInput:   m.receivedStartDateInput,
+			},
 		)
-	}
-	if m.views.FwdingHist != nil {
-		m.views.FwdingHist.SetWindowEditing(m.forwardingWindowEditing)
 	}
 }
 
@@ -1071,32 +1135,139 @@ func (m *model) canEditForwardingWindow() bool {
 	return !m.menuOpen && !m.inDetail && m.activeView == views.FWDINGHIST
 }
 
-func (m *model) beginForwardingWindowEdit() {
-	m.forwardingWindowEditing = true
+func (m *model) beginSettingsEdit() {
+	m.settingsOpen = true
+	m.settingsCursor = settingsFieldForwardingWindow
 	m.forwardingWindowInput = m.models.FwdingHist.StartTime
-	m.forwardingWindowErr = ""
+	m.forwardingMaxEventsInput = strconv.FormatUint(uint64(m.models.FwdingHist.MaxNumEvents), 10)
+	if m.models.FwdingHist.MaxNumEvents == 0 {
+		m.forwardingMaxEventsInput = ""
+	}
+	m.receivedStartDateInput = m.currentReceivedStartDateInput()
+	m.settingsErr = ""
 }
 
-func (m *model) cancelForwardingWindowEdit() {
-	m.forwardingWindowEditing = false
+func (m *model) cancelSettingsEdit() {
+	m.settingsOpen = false
 	m.forwardingWindowInput = m.models.FwdingHist.StartTime
-	m.forwardingWindowErr = ""
+	m.forwardingMaxEventsInput = ""
+	m.receivedStartDateInput = ""
+	m.settingsErr = ""
 }
 
-func (m *model) applyForwardingWindowEdit() tea.Cmd {
-	next := strings.TrimSpace(m.forwardingWindowInput)
-	if !forwardingWindowRE.MatchString(next) {
-		m.forwardingWindowErr = "use -1d/-1w/-1y"
+func (m *model) applySettingsEdit() tea.Cmd {
+	nextWindow := strings.TrimSpace(m.forwardingWindowInput)
+	if !forwardingWindowRE.MatchString(nextWindow) {
+		m.settingsCursor = settingsFieldForwardingWindow
+		m.settingsErr = "Forwarding window: use -1d/-1w/-1y"
 		return nil
 	}
 
-	m.forwardingWindowEditing = false
-	m.forwardingWindowInput = next
-	m.forwardingWindowErr = ""
-	if next == m.models.FwdingHist.StartTime {
+	nextMaxInput := strings.TrimSpace(m.forwardingMaxEventsInput)
+	var nextMax uint32
+	if nextMaxInput != "" {
+		parsed, err := strconv.ParseUint(nextMaxInput, 10, 32)
+		if err != nil {
+			m.settingsCursor = settingsFieldForwardingMaxEvents
+			m.settingsErr = "Forwarding max events: use a whole number"
+			return nil
+		}
+		nextMax = uint32(parsed)
+	}
+
+	nextReceivedInput := strings.TrimSpace(m.receivedStartDateInput)
+	nextReceivedStart, err := parseReceivedStartDate(nextReceivedInput)
+	if err != nil {
+		m.settingsCursor = settingsFieldReceivedStartDate
+		m.settingsErr = "Received start date: use YYYY-MM-DD"
 		return nil
 	}
 
-	m.models.FwdingHist.StartTime = next
-	return tea.Batch(m.loadForwardingHistoryCmd(), m.ensurePulseTick())
+	var cmds []tea.Cmd
+	if nextWindow != m.models.FwdingHist.StartTime || nextMax != m.models.FwdingHist.MaxNumEvents {
+		m.models.FwdingHist.StartTime = nextWindow
+		m.models.FwdingHist.MaxNumEvents = nextMax
+		cmds = append(cmds, m.loadForwardingHistoryCmd(), m.ensurePulseTick())
+	}
+	if nextReceivedStart != m.models.Received.StartDateUnix {
+		m.models.Received.StartDateUnix = nextReceivedStart
+		cmds = append(cmds, m.loadReceivedCmd())
+	}
+
+	m.settingsOpen = false
+	m.forwardingWindowInput = nextWindow
+	m.forwardingMaxEventsInput = nextMaxInput
+	m.receivedStartDateInput = nextReceivedInput
+	m.settingsErr = ""
+
+	return tea.Batch(cmds...)
+}
+
+func (m *model) currentReceivedStartDateInput() string {
+	if m.models == nil || m.models.Received == nil || m.models.Received.StartDateUnix == 0 {
+		return ""
+	}
+	return time.Unix(m.models.Received.StartDateUnix, 0).In(time.Local).Format("2006-01-02")
+}
+
+func parseReceivedStartDate(value string) (int64, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, nil
+	}
+	if !settingsDateRE.MatchString(value) {
+		return 0, fmt.Errorf("invalid date format")
+	}
+
+	t, err := time.ParseInLocation("2006-01-02", value, time.Local)
+	if err != nil {
+		return 0, err
+	}
+
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.Local).Unix(), nil
+}
+
+func overlayCentered(base string, overlay string, width, height int) string {
+	if overlay == "" || width <= 0 || height <= 0 {
+		return base
+	}
+
+	baseLines := strings.Split(base, "\n")
+	for len(baseLines) < height {
+		baseLines = append(baseLines, strings.Repeat(" ", width))
+	}
+
+	overlayLines := strings.Split(overlay, "\n")
+	overlayWidth := 0
+	for _, line := range overlayLines {
+		if w := lipgloss.Width(line); w > overlayWidth {
+			overlayWidth = w
+		}
+	}
+
+	startY := max(0, (height-len(overlayLines))/2)
+	startX := max(0, (width-overlayWidth)/2)
+	for i, line := range overlayLines {
+		row := startY + i
+		if row >= len(baseLines) {
+			break
+		}
+
+		left := ansi.Truncate(baseLines[row], startX, "")
+		if vis := lipgloss.Width(left); vis < startX {
+			left += strings.Repeat(" ", startX-vis)
+		}
+
+		merged := ansi.Truncate(left+line, width, "")
+		if vis := lipgloss.Width(merged); vis < width {
+			merged += strings.Repeat(" ", width-vis)
+		}
+		baseLines[row] = merged
+	}
+
+	if len(baseLines) > height {
+		baseLines = baseLines[:height]
+	}
+
+	return strings.Join(baseLines, "\n")
 }

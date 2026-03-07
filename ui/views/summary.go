@@ -55,19 +55,40 @@ var (
 
 	windowErrorStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#fca5a5"))
+
+	forwardingWindowModalStyle = lipgloss.NewStyle().
+					Border(lipgloss.RoundedBorder()).
+					BorderForeground(lipgloss.Color("#0f766e")).
+					Background(lipgloss.Color("#091411")).
+					Padding(1, 2)
+
+	forwardingWindowHintStyle = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#99f6e4"))
+
+	selectedSettingLabelStyle = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#818cf8")).
+					Bold(true)
 )
 
+type SettingsModalState struct {
+	Open                     bool
+	Cursor                   int
+	Error                    string
+	ForwardingWindowInput    string
+	ForwardingMaxEventsInput string
+	ReceivedStartDateInput   string
+}
+
 type Summary struct {
-	info                    *models.Info
-	channelsBalance         *models.ChannelsBalance
-	walletBalance           *models.WalletBalance
-	channels                *models.Channels
-	fwdingHist              *models.FwdingHist
-	forwardingHistLoading   bool
-	forwardingWindowInput   string
-	forwardingWindowEditing bool
-	forwardingWindowErr     string
-	pulseFrame              int
+	info                  *models.Info
+	channelsBalance       *models.ChannelsBalance
+	walletBalance         *models.WalletBalance
+	channels              *models.Channels
+	fwdingHist            *models.FwdingHist
+	received              *models.Received
+	forwardingHistLoading bool
+	settings              SettingsModalState
+	pulseFrame            int
 }
 
 func (s *Summary) Render(width int) string {
@@ -204,10 +225,6 @@ func (s *Summary) Render(width int) string {
 		label("Hottest link:"),
 		s.hottestLinkDisplay(stats),
 	))
-	if s.forwardingWindowErr != "" {
-		accounting.WriteString("\n")
-		accounting.WriteString(windowErrorStyle.Render(s.forwardingWindowErr))
-	}
 
 	return s.layoutPanels(width, left.String(), right.String(), accounting.String())
 }
@@ -248,13 +265,15 @@ func NewSummary(info *models.Info,
 	channelsBalance *models.ChannelsBalance,
 	walletBalance *models.WalletBalance,
 	channels *models.Channels,
-	fwdingHist *models.FwdingHist) *Summary {
+	fwdingHist *models.FwdingHist,
+	received *models.Received) *Summary {
 	return &Summary{
 		info:            info,
 		channelsBalance: channelsBalance,
 		walletBalance:   walletBalance,
 		channels:        channels,
 		fwdingHist:      fwdingHist,
+		received:        received,
 	}
 }
 
@@ -262,18 +281,13 @@ func (s *Summary) SetPulseFrame(frame int) {
 	s.pulseFrame = frame
 }
 
-func (s *Summary) SetForwardingState(loading bool, editing bool, input string, err string) {
+func (s *Summary) SetSettingsState(loading bool, state SettingsModalState) {
 	s.forwardingHistLoading = loading
-	s.forwardingWindowEditing = editing
-	s.forwardingWindowInput = input
-	s.forwardingWindowErr = err
+	s.settings = state
 }
 
 func (s *Summary) renderWindowInput() string {
 	value := s.fwdingHist.StartTime
-	if s.forwardingWindowEditing {
-		value = s.forwardingWindowInput
-	}
 	if value == "" {
 		value = "all"
 	}
@@ -281,18 +295,82 @@ func (s *Summary) renderWindowInput() string {
 	const width = 8
 	text := value
 	style := windowInputIdleStyle
-	if s.forwardingWindowEditing {
-		style = windowInputStyle
-		cursor := "|"
-		if len(text) >= width-1 {
-			text = text[len(text)-(width-1):]
-		}
-		text = fmt.Sprintf("%-*s%s", width-1, text, cursor)
-	} else {
-		text = fmt.Sprintf("%-*s", width, text)
+	if len(text) > width {
+		text = text[len(text)-width:]
 	}
+	text = fmt.Sprintf("%-*s", width, text)
 
 	return style.Render(text)
+}
+
+func (s *Summary) RenderSettingsModal(maxWidth int) string {
+	if !s.settings.Open {
+		return ""
+	}
+
+	width := min(62, maxWidth-6)
+	if width < 36 {
+		width = max(20, maxWidth)
+	}
+
+	var body strings.Builder
+	body.WriteString(panelTitleStyle.Render("Data Settings"))
+	body.WriteString("\n")
+	body.WriteString("\n")
+	body.WriteString(s.renderSettingRow("Forwarding Window", s.settings.ForwardingWindowInput, "all", s.settings.Cursor == 0))
+	body.WriteString("\n")
+	body.WriteString(s.renderSettingRow("Forwarding Max Events", s.settings.ForwardingMaxEventsInput, "0", s.settings.Cursor == 1))
+	body.WriteString("\n")
+	body.WriteString(s.renderSettingRow("Received Start Date", s.settings.ReceivedStartDateInput, "all", s.settings.Cursor == 2))
+	body.WriteString("\n")
+	body.WriteString(forwardingWindowHintStyle.Render(s.settingsHelpText()))
+	if s.settings.Error != "" {
+		body.WriteString("\n")
+		body.WriteString(windowErrorStyle.Render(s.settings.Error))
+	}
+	body.WriteString("\n")
+	body.WriteString(forwardingWindowHintStyle.Render("Up/Down select  Enter apply  Esc cancel"))
+
+	return forwardingWindowModalStyle.Width(width).Render(body.String())
+}
+
+func (s *Summary) renderSettingRow(label string, value string, emptyLabel string, selected bool) string {
+	labelStyle := panelLabelStyle
+	inputStyle := windowInputIdleStyle
+	if selected {
+		labelStyle = selectedSettingLabelStyle
+		inputStyle = windowInputStyle
+	}
+
+	return fmt.Sprintf("%s %s",
+		labelStyle.Render(fmt.Sprintf("%-22s", label)),
+		s.renderSettingInput(value, emptyLabel, 16, inputStyle),
+	)
+}
+
+func (s *Summary) renderSettingInput(value string, emptyLabel string, width int, style lipgloss.Style) string {
+	text := value
+	if text == "" {
+		text = emptyLabel
+	}
+	if len(text) > width {
+		text = text[len(text)-width:]
+	}
+
+	return style.Render(fmt.Sprintf("%-*s", width, text))
+}
+
+func (s *Summary) settingsHelpText() string {
+	switch s.settings.Cursor {
+	case 0:
+		return "Forwarding window examples: -1h -1d -1w -1M -1y"
+	case 1:
+		return "Forwarding max events: whole number, 0 means all"
+	case 2:
+		return "Received start date: YYYY-MM-DD, blank means all"
+	default:
+		return ""
+	}
 }
 
 func (s *Summary) layoutPanels(width int, channelsPanel string, walletPanel string, accountingPanel string) string {

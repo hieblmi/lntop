@@ -34,6 +34,7 @@ type transactionsLoadedMsg struct {
 
 type forwardingHistoryLoadedMsg struct {
 	startTime string
+	maxEvents uint32
 	events    []*netmodels.ForwardingEvent
 	err       error
 }

@@ -150,8 +150,13 @@ func TestSummaryRenderWidthBoundedWithAccounting(t *testing.T) {
 		}},
 		channels,
 		fwdingHist,
+		&uimodels.Received{},
 	)
-	summary.SetForwardingState(true, true, "-1w", "")
+	summary.SetSettingsState(true, SettingsModalState{
+		Open:                  true,
+		Cursor:                0,
+		ForwardingWindowInput: "-1w",
+	})
 	summary.SetPulseFrame(1)
 
 	out := summary.Render(100)
@@ -162,6 +167,56 @@ func TestSummaryRenderWidthBoundedWithAccounting(t *testing.T) {
 		if w := lipgloss.Width(line); w > 100 {
 			t.Fatalf("line %d width %d exceeds 100", i+1, w)
 		}
+	}
+}
+
+func TestSummaryRenderKeepsAppliedWindowWhilePopupEditing(t *testing.T) {
+	channels := uimodels.NewChannels()
+	channels.Add(&netmodels.Channel{Capacity: 10_000})
+
+	fwdingHist := &uimodels.FwdingHist{StartTime: "-1d"}
+	fwdingHist.Update([]*netmodels.ForwardingEvent{{
+		AmtOut: 8_000,
+		Fee:    80,
+	}})
+
+	summary := NewSummary(
+		&uimodels.Info{Info: &netmodels.Info{
+			NumActiveChannels:   1,
+			NumPendingChannels:  0,
+			NumInactiveChannels: 0,
+		}},
+		&uimodels.ChannelsBalance{ChannelsBalance: &netmodels.ChannelsBalance{
+			Balance: 4_000,
+		}},
+		&uimodels.WalletBalance{WalletBalance: &netmodels.WalletBalance{
+			TotalBalance:              5_000,
+			ConfirmedBalance:          4_000,
+			UnconfirmedBalance:        1_000,
+			LockedBalance:             200,
+			ReservedBalanceAnchorChan: 300,
+			AccountBalance:            map[string]*netmodels.WalletAccountBalance{},
+		}},
+		channels,
+		fwdingHist,
+		&uimodels.Received{},
+	)
+	summary.SetSettingsState(false, SettingsModalState{
+		Open:                  true,
+		Cursor:                0,
+		Error:                 "Forwarding window: use -1d/-1w/-1y",
+		ForwardingWindowInput: "-1w",
+	})
+
+	out := summary.Render(100)
+	if !strings.Contains(out, "-1d") {
+		t.Fatalf("summary should keep showing the applied forwarding window")
+	}
+	if strings.Contains(out, "-1w") {
+		t.Fatalf("summary should not show the popup draft value")
+	}
+	if strings.Contains(out, "use -1d/-1w/-1y") {
+		t.Fatalf("summary should not render popup validation errors")
 	}
 }
 
@@ -194,6 +249,7 @@ func TestSummaryRenderFillsWideLayoutWidth(t *testing.T) {
 		}},
 		channels,
 		fwdingHist,
+		&uimodels.Received{},
 	)
 
 	out := summary.Render(180)

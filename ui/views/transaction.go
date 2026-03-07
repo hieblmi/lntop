@@ -63,7 +63,7 @@ func (c *Transaction) Render(width, height int) string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(renderFooter(width, "F2", "Menu", "Enter", "Transactions", "F9", "Fwd Window", "F10", "Quit"))
+	b.WriteString(renderFooter(width, "F2", "Menu", "Enter", "Transactions", "F9", "Settings", "F10", "Quit"))
 	return b.String()
 }
 

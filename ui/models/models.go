@@ -236,6 +236,7 @@ func (m *Models) ApplyForwardingHistory(events []*models.ForwardingEvent) {
 }
 
 func (m *Models) ApplyReceived(invoices []*models.Invoice) {
+	m.Received.Reset(m.Received.StartDateUnix)
 	for _, inv := range invoices {
 		if inv == nil || !inv.Settled {
 			continue

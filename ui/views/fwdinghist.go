@@ -27,13 +27,12 @@ type fwdinghistColumn struct {
 }
 
 type FwdingHist struct {
-	cfg           *config.View
-	columns       []fwdinghistColumn
-	fwdinghist    *models.FwdingHist
-	windowEditing bool
-	Cursor        int
-	Offset        int
-	ColCursor     int
+	cfg        *config.View
+	columns    []fwdinghistColumn
+	fwdinghist *models.FwdingHist
+	Cursor     int
+	Offset     int
+	ColCursor  int
 }
 
 func (c *FwdingHist) Name() string { return FWDINGHIST }
@@ -137,15 +136,9 @@ func (c *FwdingHist) Render(width, height int) string {
 		b.WriteString("\n")
 	}
 
-	if c.windowEditing {
-		b.WriteString(renderFooter(width,
-			"Esc", "Cancel", "Enter", "Apply", "F9", "Fwd Window", "F10", "Quit",
-			fmt.Sprintf("  Total: %d", c.fwdinghist.Len())))
-	} else {
-		b.WriteString(renderFooter(width,
-			"F2", "Menu", "W", "Window", "F9", "Fwd Window", "F10", "Quit",
-			fmt.Sprintf("  Total: %d", c.fwdinghist.Len())))
-	}
+	b.WriteString(renderFooter(width,
+		"F2", "Menu", "W", "Settings", "F9", "Settings", "F10", "Quit",
+		fmt.Sprintf("  Total: %d", c.fwdinghist.Len())))
 	return b.String()
 }
 
@@ -273,10 +266,6 @@ func NewFwdingHist(cfg *config.View, hist *models.FwdingHist, channels *models.C
 		}
 	}
 	return fh
-}
-
-func (c *FwdingHist) SetWindowEditing(editing bool) {
-	c.windowEditing = editing
 }
 
 func fwdInboundFee(channels *models.Channels, chanID uint64, extract func(*netmodels.RoutingPolicy) int32) int32 {

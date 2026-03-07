@@ -59,7 +59,7 @@ func loadForwardingHistoryCmd(net *network.Network, startTime string, max uint32
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		events, err := net.GetForwardingHistory(ctx, startTime, max)
-		return forwardingHistoryLoadedMsg{startTime: startTime, events: events, err: err}
+		return forwardingHistoryLoadedMsg{startTime: startTime, maxEvents: max, events: events, err: err}
 	}
 }
 

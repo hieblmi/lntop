@@ -96,12 +96,11 @@ func (m *Menu) Render(width, height int) string {
 	}
 
 	// Pad remaining height. Account for border top/bottom (2 lines).
-	used := 1 + len(menuItems) + 1 + 2
+	used := 1 + len(menuItems) + 2
 	for i := 0; i < height-used; i++ {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(renderFooter(innerW, "F2", "Close", "F9", "Fwd Window"))
 	return menuBorderStyle.Render(b.String())
 }
 

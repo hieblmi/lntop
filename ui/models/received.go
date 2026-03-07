@@ -73,6 +73,14 @@ func (r *Received) Add(inv *netmodels.Invoice) {
 	}
 }
 
+func (r *Received) Reset(startDateUnix int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.StartDateUnix = startDateUnix
+	r.list = nil
+}
+
 // RefreshReceived consumes an update (expected *netmodels.Invoice) and updates the list.
 func (m *Models) RefreshReceived(update interface{}) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
@@ -91,6 +99,7 @@ func (m *Models) RefreshReceivedFromNetwork(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	m.Received.Reset(m.Received.StartDateUnix)
 	for _, inv := range invoices {
 		if inv == nil || !inv.Settled {
 			continue

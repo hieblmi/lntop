@@ -215,7 +215,7 @@ func (c *Channels) Render(width, height int) string {
 	}
 
 	// Footer.
-	b.WriteString(renderFooter(width, "F2", "Menu", "Enter", "Channel", "F9", "Fwd Window", "F10", "Quit"))
+	b.WriteString(renderFooter(width, "F2", "Menu", "Enter", "Channel", "F9", "Settings", "F10", "Quit"))
 	return b.String()
 }
 

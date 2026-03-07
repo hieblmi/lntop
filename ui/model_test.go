@@ -2,11 +2,14 @@ package ui
 
 import (
 	"errors"
+	"regexp"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/hieblmi/lntop/app"
+	"github.com/hieblmi/lntop/config"
 	"github.com/hieblmi/lntop/events"
 	"github.com/hieblmi/lntop/logging"
 	netmodels "github.com/hieblmi/lntop/network/models"
@@ -228,55 +231,72 @@ func TestStartupTaskErrorRetriesInsteadOfCompleting(t *testing.T) {
 	}
 }
 
-func TestApplyForwardingWindowEditUpdatesStartTime(t *testing.T) {
+func TestApplySettingsEditUpdatesConfiguredQueries(t *testing.T) {
 	m := &model{
 		app:        &app.App{},
 		activeView: views.FWDINGHIST,
 		models: &uimodels.Models{
 			FwdingHist: &uimodels.FwdingHist{StartTime: "-1d", MaxNumEvents: 50},
+			Received:   &uimodels.Received{},
 		},
 	}
 
 	_, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")})
-	if !m.forwardingWindowEditing {
-		t.Fatalf("expected forwarding window editing to start")
+	if !m.settingsOpen {
+		t.Fatalf("expected settings popup to open")
 	}
 	if m.forwardingWindowInput != "-1d" {
 		t.Fatalf("forwardingWindowInput = %q, want %q", m.forwardingWindowInput, "-1d")
 	}
+	if m.forwardingMaxEventsInput != "50" {
+		t.Fatalf("forwardingMaxEventsInput = %q, want %q", m.forwardingMaxEventsInput, "50")
+	}
 
 	m.forwardingWindowInput = "-1w"
-	cmd := m.applyForwardingWindowEdit()
+	m.forwardingMaxEventsInput = "75"
+	m.receivedStartDateInput = "2025-09-01"
+	cmd := m.applySettingsEdit()
 
 	if m.models.FwdingHist.StartTime != "-1w" {
 		t.Fatalf("StartTime = %q, want %q", m.models.FwdingHist.StartTime, "-1w")
 	}
-	if m.forwardingWindowEditing {
-		t.Fatalf("expected forwarding window editing to end")
+	if m.models.FwdingHist.MaxNumEvents != 75 {
+		t.Fatalf("MaxNumEvents = %d, want 75", m.models.FwdingHist.MaxNumEvents)
+	}
+	wantStart, err := parseReceivedStartDate("2025-09-01")
+	if err != nil {
+		t.Fatalf("parseReceivedStartDate() error = %v", err)
+	}
+	if m.models.Received.StartDateUnix != wantStart {
+		t.Fatalf("StartDateUnix = %d, want %d", m.models.Received.StartDateUnix, wantStart)
+	}
+	if m.settingsOpen {
+		t.Fatalf("expected settings popup to close")
 	}
 	if cmd == nil {
-		t.Fatalf("expected forwarding history reload command")
+		t.Fatalf("expected reload commands")
 	}
 }
 
-func TestApplyForwardingWindowEditRejectsInvalidValue(t *testing.T) {
+func TestApplySettingsEditRejectsInvalidValue(t *testing.T) {
 	m := &model{
 		models: &uimodels.Models{
 			FwdingHist: &uimodels.FwdingHist{StartTime: "-1d"},
+			Received:   &uimodels.Received{},
 		},
-		forwardingWindowEditing: true,
-		forwardingWindowInput:   "yesterday",
+		settingsOpen:          true,
+		forwardingWindowInput: "yesterday",
 	}
 
-	cmd := m.applyForwardingWindowEdit()
+	cmd := m.applySettingsEdit()
 
 	if cmd != nil {
 		t.Fatalf("expected no command for invalid input")
 	}
-	if !m.forwardingWindowEditing {
-		t.Fatalf("editing should stay active on invalid input")
+	if !m.settingsOpen {
+		t.Fatalf("settings popup should stay open on invalid input")
 	}
-	if m.forwardingWindowErr == "" {
+	if m.settingsErr == "" {
 		t.Fatalf("expected validation error")
 	}
 	if m.models.FwdingHist.StartTime != "-1d" {
@@ -284,13 +304,14 @@ func TestApplyForwardingWindowEditRejectsInvalidValue(t *testing.T) {
 	}
 }
 
-func TestHandleKeyF9StartsForwardingWindowEditorWithoutChangingView(t *testing.T) {
+func TestHandleKeyF9StartsSettingsWithoutChangingView(t *testing.T) {
 	m := &model{
 		activeView: views.CHANNELS,
 		inDetail:   true,
 		menuOpen:   true,
 		models: &uimodels.Models{
 			FwdingHist: &uimodels.FwdingHist{StartTime: "-1w"},
+			Received:   &uimodels.Received{},
 		},
 	}
 
@@ -305,14 +326,91 @@ func TestHandleKeyF9StartsForwardingWindowEditorWithoutChangingView(t *testing.T
 	if !m.menuOpen {
 		t.Fatalf("menu state should stay unchanged")
 	}
-	if !m.forwardingWindowEditing {
-		t.Fatalf("expected forwarding window editing to start")
+	if !m.settingsOpen {
+		t.Fatalf("expected settings popup to open")
 	}
 	if m.forwardingWindowInput != "-1w" {
 		t.Fatalf("forwardingWindowInput = %q, want %q", m.forwardingWindowInput, "-1w")
 	}
 	if cmd != nil {
-		t.Fatalf("expected no command when only entering edit mode")
+		t.Fatalf("expected no command when only opening settings")
+	}
+}
+
+func TestViewRendersSettingsPopup(t *testing.T) {
+	channels := uimodels.NewChannels()
+	channels.Add(&netmodels.Channel{
+		Capacity:     10_000,
+		LocalBalance: 4_000,
+		RemotePubKey: "0123456789abcdef",
+		Node:         &netmodels.Node{Alias: "alice"},
+	})
+
+	fwdingHist := &uimodels.FwdingHist{StartTime: "-1d"}
+	fwdingHist.Update([]*netmodels.ForwardingEvent{{
+		AmtOut:  8_000,
+		FeeMsat: 80_000,
+	}})
+
+	models := &uimodels.Models{
+		Info: &uimodels.Info{Info: &netmodels.Info{
+			Alias:               "alice",
+			Version:             "0.20.0-beta",
+			Chains:              []string{"bitcoin"},
+			Network:             "regtest",
+			Synced:              true,
+			BlockHeight:         100,
+			NumPeers:            3,
+			NumActiveChannels:   1,
+			NumPendingChannels:  0,
+			NumInactiveChannels: 0,
+		}},
+		Channels: channels,
+		WalletBalance: &uimodels.WalletBalance{WalletBalance: &netmodels.WalletBalance{
+			TotalBalance:              5_000,
+			ConfirmedBalance:          4_000,
+			UnconfirmedBalance:        1_000,
+			LockedBalance:             200,
+			ReservedBalanceAnchorChan: 300,
+			AccountBalance:            map[string]*netmodels.WalletAccountBalance{},
+		}},
+		ChannelsBalance: &uimodels.ChannelsBalance{ChannelsBalance: &netmodels.ChannelsBalance{
+			Balance: 4_000,
+		}},
+		Transactions: &uimodels.Transactions{},
+		RoutingLog:   &uimodels.RoutingLog{},
+		FwdingHist:   fwdingHist,
+		Received:     &uimodels.Received{},
+	}
+
+	m := &model{
+		width:                    120,
+		height:                   28,
+		activeView:               views.CHANNELS,
+		models:                   models,
+		views:                    views.New(config.Views{}, models),
+		settingsOpen:             true,
+		settingsCursor:           1,
+		forwardingWindowInput:    "-1w",
+		forwardingMaxEventsInput: "333",
+		receivedStartDateInput:   "2025-09-01",
+	}
+
+	out := stripANSI(m.View())
+	if !strings.Contains(out, "Data Settings") {
+		t.Fatalf("popup title missing from view")
+	}
+	if !strings.Contains(out, "Forwarding Window") || !strings.Contains(out, "Forwarding Max Events") || !strings.Contains(out, "Received Start Date") {
+		t.Fatalf("popup settings fields missing from view")
+	}
+	if !strings.Contains(out, "333") || !strings.Contains(out, "2025-09-01") {
+		t.Fatalf("popup values missing from view")
+	}
+	if !strings.Contains(out, "Up/Down select  Enter apply  Esc cancel") {
+		t.Fatalf("popup actions missing from view")
+	}
+	if !strings.Contains(out, "Accounting (FwdingHistory)") {
+		t.Fatalf("base view should still render behind the popup")
 	}
 }
 
@@ -348,4 +446,10 @@ func TestHandleEventChannelsUpdatedRefreshesSummaryData(t *testing.T) {
 	if cmd == nil {
 		t.Fatalf("expected reload command batch")
 	}
+}
+
+var ansiTestRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func stripANSI(s string) string {
+	return ansiTestRE.ReplaceAllString(s, "")
 }

@@ -137,7 +137,7 @@ func (c *Received) Render(width, height int) string {
 	}
 
 	b.WriteString(renderFooter(width,
-		"F2", "Menu", "F9", "Fwd Window", "F10", "Quit",
+		"F2", "Menu", "F9", "Settings", "F10", "Quit",
 		fmt.Sprintf("  Invoices: %d", c.received.Len())))
 	return b.String()
 }
