@@ -85,6 +85,7 @@ columns = [
 	# "AGE",       # approximate channel age
 	"PRIVATE",     # true if channel is private
 	"ID",          # the id of the channel
+	"CHANNEL_POINT", # the funding outpoint txid:vout on-chain
 	# "SCID",      # short channel id (BxTxO formatted)
 	# "NUPD",      # number of channel updates
 ]

@@ -1,10 +1,9 @@
 package views
 
 import (
-	"bytes"
 	"fmt"
+	"strings"
 
-	"github.com/awesome-gocui/gocui"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 
@@ -14,31 +13,8 @@ import (
 	"github.com/hieblmi/lntop/ui/models"
 )
 
-const (
-	TRANSACTIONS         = "transactions"
-	TRANSACTIONS_COLUMNS = "transactions_columns"
-	TRANSACTIONS_FOOTER  = "transactions_footer"
-)
-
 var DefaultTransactionsColumns = []string{
-	"DATE",
-	"HEIGHT",
-	"CONFIR",
-	"AMOUNT",
-	"FEE",
-	"ADDRESSES",
-}
-
-type Transactions struct {
-	cfg *config.View
-
-	columns           []transactionsColumn
-	columnHeadersView *gocui.View
-	view              *gocui.View
-	transactions      *models.Transactions
-
-	ox, oy int
-	cx, cy int
+	"DATE", "HEIGHT", "CONFIR", "AMOUNT", "FEE", "ADDRESSES",
 }
 
 type transactionsColumn struct {
@@ -49,268 +25,150 @@ type transactionsColumn struct {
 	display func(*netmodels.Transaction, ...color.Option) string
 }
 
-func (c Transactions) Index() int {
-	_, oy := c.view.Origin()
-	_, cy := c.view.Cursor()
-	return cy + oy
+type Transactions struct {
+	cfg          *config.View
+	columns      []transactionsColumn
+	transactions *models.Transactions
+	Cursor       int
+	Offset       int
+	ColCursor    int
 }
 
-func (c Transactions) Name() string {
-	return TRANSACTIONS
+func (c *Transactions) Name() string { return TRANSACTIONS }
+
+func (c *Transactions) CursorDown() {
+	if c.Cursor < c.transactions.Len()-1 {
+		c.Cursor++
+	}
 }
-
-func (c *Transactions) Wrap(v *gocui.View) View {
-	c.view = v
-	return c
+func (c *Transactions) CursorUp() {
+	if c.Cursor > 0 {
+		c.Cursor--
+	}
 }
-
-func (c Transactions) currentColumnIndex() int {
-	x := c.ox + c.cx
-	index := 0
-	sum := 0
-	for i := range c.columns {
-		sum += c.columns[i].width + 1
-		if x < sum {
-			return index
-		}
-		index++
+func (c *Transactions) ColumnRight() {
+	if c.ColCursor < len(c.columns)-1 {
+		c.ColCursor++
 	}
-	return index
 }
-
-func (c Transactions) Origin() (int, int) {
-	return c.ox, c.oy
+func (c *Transactions) ColumnLeft() {
+	if c.ColCursor > 0 {
+		c.ColCursor--
+	}
 }
-
-func (c Transactions) Cursor() (int, int) {
-	return c.cx, c.cy
-}
-
-func (c *Transactions) SetCursor(cx, cy int) error {
-	if err := cursorCompat(c.columnHeadersView, cx, 0); err != nil {
-		return err
-	}
-	err := c.columnHeadersView.SetCursor(cx, 0)
-	if err != nil {
-		return err
-	}
-
-	if err := cursorCompat(c.view, cx, cy); err != nil {
-		return err
-	}
-	err = c.view.SetCursor(cx, cy)
-	if err != nil {
-		return err
-	}
-
-	c.cx, c.cy = cx, cy
-	return nil
-}
-
-func (c *Transactions) SetOrigin(ox, oy int) error {
-	err := c.columnHeadersView.SetOrigin(ox, 0)
-	if err != nil {
-		return err
-	}
-	err = c.view.SetOrigin(ox, oy)
-	if err != nil {
-		return err
-	}
-
-	c.ox, c.oy = ox, oy
-	return nil
-}
-
-func (c *Transactions) Speed() (int, int, int, int) {
-	current := c.currentColumnIndex()
-	up := 0
-	down := 0
-	if c.Index() > 0 {
-		up = 1
-	}
-	if c.Index() < c.transactions.Len()-1 {
-		down = 1
-	}
-	if current > len(c.columns)-1 {
-		return 0, c.columns[current-1].width + 1, down, up
-	}
-	if current == 0 {
-		return c.columns[0].width + 1, 0, down, up
-	}
-	return c.columns[current].width + 1,
-		c.columns[current-1].width + 1,
-		down, up
-}
-
-func (c *Transactions) Limits() (pageSize int, fullSize int) {
-	_, pageSize = c.view.Size()
-	fullSize = c.transactions.Len()
-	return
-}
+func (c *Transactions) Home()           { c.Cursor = 0 }
+func (c *Transactions) End()            { c.Cursor = max(0, c.transactions.Len()-1) }
+func (c *Transactions) PageDown(ps int) { c.Cursor = min(c.Cursor+ps, max(0, c.transactions.Len()-1)) }
+func (c *Transactions) PageUp(ps int)   { c.Cursor = max(0, c.Cursor-ps) }
+func (c *Transactions) Index() int      { return c.Cursor }
 
 func (c *Transactions) Sort(column string, order models.Order) {
-	if column == "" {
-		index := c.currentColumnIndex()
-		if index >= len(c.columns) {
-			return
-		}
-		col := c.columns[index]
-		if col.sort == nil {
-			return
-		}
-
-		c.transactions.Sort(col.sort(order))
-		for i := range c.columns {
-			c.columns[i].sorted = (i == index)
-		}
+	if c.ColCursor >= len(c.columns) {
+		return
 	}
-}
-
-func (c Transactions) Delete(g *gocui.Gui) error {
-	err := g.DeleteView(TRANSACTIONS_COLUMNS)
-	if err != nil {
-		return err
+	col := c.columns[c.ColCursor]
+	if col.sort == nil {
+		return
 	}
-
-	err = g.DeleteView(TRANSACTIONS)
-	if err != nil {
-		return err
-	}
-
-	return g.DeleteView(TRANSACTIONS_FOOTER)
-}
-
-func (c *Transactions) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
-	var err error
-	setCursor := false
-	c.columnHeadersView, err = g.SetView(TRANSACTIONS_COLUMNS, x0-1, y0, x1+2, y0+2, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-		setCursor = true
-	}
-	c.columnHeadersView.Frame = false
-	c.columnHeadersView.BgColor = gocui.ColorGreen
-	c.columnHeadersView.FgColor = gocui.ColorBlack
-
-	c.view, err = g.SetView(TRANSACTIONS, x0-1, y0+1, x1+2, y1-1, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-		setCursor = true
-	}
-	c.view.Frame = false
-	c.view.Autoscroll = false
-	c.view.SelBgColor = gocui.ColorCyan
-	c.view.SelFgColor = gocui.ColorBlack | gocui.AttrDim
-	c.view.Highlight = true
-	c.display()
-
-	if setCursor {
-		ox, oy := c.Origin()
-		err := c.SetOrigin(ox, oy)
-		if err != nil {
-			return err
-		}
-
-		cx, cy := c.Cursor()
-		err = c.SetCursor(cx, cy)
-		if err != nil {
-			return err
-		}
-	}
-
-	footer, err := g.SetView(TRANSACTIONS_FOOTER, x0-1, y1-2, x1+2, y1, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-	}
-	footer.Frame = false
-	footer.BgColor = gocui.ColorCyan
-	footer.FgColor = gocui.ColorBlack
-	footer.Rewind()
-	blackBg := color.Black(color.Background)
-	_, _ = fmt.Fprintf(footer, "%s%s %s%s %s%s\n",
-		blackBg("F2"), "Menu",
-		blackBg("Enter"), "Transaction",
-		blackBg("F10"), "Quit",
-	)
-	return nil
-}
-
-func (c *Transactions) display() {
-	c.columnHeadersView.Rewind()
-	var buffer bytes.Buffer
-	current := c.currentColumnIndex()
+	c.transactions.Sort(col.sort(order))
 	for i := range c.columns {
-		if current == i {
-			buffer.WriteString(color.Cyan(color.Background)(c.columns[i].name))
-			buffer.WriteString(" ")
-			continue
-		} else if c.columns[i].sorted {
-			buffer.WriteString(color.Magenta(color.Background)(c.columns[i].name))
-			buffer.WriteString(" ")
-			continue
-		}
-		buffer.WriteString(c.columns[i].name)
-		buffer.WriteString(" ")
+		c.columns[i].sorted = (i == c.ColCursor)
 	}
-	_, _ = fmt.Fprintln(c.columnHeadersView, buffer.String())
+}
 
-	c.view.Rewind()
-	for _, item := range c.transactions.List() {
-		var buffer bytes.Buffer
-		for i := range c.columns {
+func (c *Transactions) Render(width, height int) string {
+	var b strings.Builder
+	colWidths := make([]int, len(c.columns))
+	for i := range c.columns {
+		colWidths[i] = c.columns[i].width
+	}
+	visibleStart, visibleEnd := visibleColumnRange(width, c.ColCursor, colWidths)
+
+	// Column header.
+	var hdr strings.Builder
+	for i := visibleStart; i < visibleEnd; i++ {
+		col := c.columns[i]
+		name := renderHeaderCell(col.name, col.width, DefaultColStyle)
+		if i == c.ColCursor {
+			name = renderHeaderCell(col.name, col.width, ActiveColStyle)
+		} else if col.sorted {
+			name = renderHeaderCell(col.name, col.width, SortedColStyle)
+		}
+		hdr.WriteString(name)
+		hdr.WriteString(" ")
+	}
+	b.WriteString(renderTableHeader(hdr.String(), width))
+	b.WriteString("\n")
+
+	dataHeight := height - 2
+	items := c.transactions.List()
+	if c.Cursor >= len(items) {
+		c.Cursor = max(0, len(items)-1)
+	}
+	if c.Cursor < c.Offset {
+		c.Offset = c.Cursor
+	}
+	if c.Cursor >= c.Offset+dataHeight {
+		c.Offset = c.Cursor - dataHeight + 1
+	}
+	end := min(c.Offset+dataHeight, len(items))
+
+	for idx := c.Offset; idx < end; idx++ {
+		item := items[idx]
+		var row strings.Builder
+		for i := visibleStart; i < visibleEnd; i++ {
+			col := c.columns[i]
 			var opt color.Option
-			if current == i {
+			if i == c.ColCursor {
 				opt = color.Bold
 			}
-			buffer.WriteString(c.columns[i].display(item, opt))
-			buffer.WriteString(" ")
+			row.WriteString(fitCell(col.display(item, opt), col.width))
+			row.WriteString(" ")
 		}
-		_, _ = fmt.Fprintln(c.view, buffer.String())
+		line := row.String()
+		if idx == c.Cursor {
+			line = selectedRow(line, width)
+		} else {
+			line = safeTruncRow(line, width)
+		}
+		b.WriteString(line)
+		b.WriteString("\n")
 	}
+	for i := end - c.Offset; i < dataHeight; i++ {
+		b.WriteString("\n")
+	}
+
+	b.WriteString(renderFooter(width, "F2", "Menu", "Enter", "Transaction", "F9", "Settings", "F10", "Quit"))
+	return b.String()
 }
 
 func NewTransactions(cfg *config.View, txs *models.Transactions) *Transactions {
-	transactions := &Transactions{
-		cfg:          cfg,
-		transactions: txs,
-	}
-
+	transactions := &Transactions{cfg: cfg, transactions: txs}
 	printer := message.NewPrinter(language.English)
 
 	columns := DefaultTransactionsColumns
 	if cfg != nil && len(cfg.Columns) != 0 {
 		columns = cfg.Columns
 	}
-
 	transactions.columns = make([]transactionsColumn, len(columns))
 
 	for i := range columns {
 		switch columns[i] {
 		case "DATE":
 			transactions.columns[i] = transactionsColumn{
-				name:  fmt.Sprintf("%-15s", columns[i]),
-				width: 15,
+				name: fmt.Sprintf("%-15s", columns[i]), width: 15,
 				sort: func(order models.Order) models.TransactionsSort {
 					return func(tx1, tx2 *netmodels.Transaction) bool {
 						return models.DateSort(&tx1.Date, &tx2.Date, order)
 					}
 				},
 				display: func(tx *netmodels.Transaction, opts ...color.Option) string {
-					return color.Cyan(opts...)(
-						fmt.Sprintf("%15s", tx.Date.Format("15:04:05 Jan _2")),
-					)
+					return color.Cyan(opts...)(fmt.Sprintf("%15s", tx.Date.Format("15:04:05 Jan _2")))
 				},
 			}
 		case "HEIGHT":
 			transactions.columns[i] = transactionsColumn{
-				name:  fmt.Sprintf("%8s", columns[i]),
-				width: 8,
+				name: fmt.Sprintf("%8s", columns[i]), width: 8,
 				sort: func(order models.Order) models.TransactionsSort {
 					return func(tx1, tx2 *netmodels.Transaction) bool {
 						return models.Int32Sort(tx1.BlockHeight, tx2.BlockHeight, order)
@@ -320,36 +178,9 @@ func NewTransactions(cfg *config.View, txs *models.Transactions) *Transactions {
 					return color.White(opts...)(fmt.Sprintf("%8d", tx.BlockHeight))
 				},
 			}
-		case "ADDRESSES":
-			transactions.columns[i] = transactionsColumn{
-				name:  fmt.Sprintf("%10s", columns[i]),
-				width: 10,
-				sort: func(order models.Order) models.TransactionsSort {
-					return func(tx1, tx2 *netmodels.Transaction) bool {
-						return models.IntSort(len(tx1.DestAddresses), len(tx2.DestAddresses), order)
-					}
-				},
-				display: func(tx *netmodels.Transaction, opts ...color.Option) string {
-					return color.White(opts...)(fmt.Sprintf("%10d", len(tx.DestAddresses)))
-				},
-			}
-		case "FEE":
-			transactions.columns[i] = transactionsColumn{
-				name:  fmt.Sprintf("%8s", columns[i]),
-				width: 8,
-				sort: func(order models.Order) models.TransactionsSort {
-					return func(tx1, tx2 *netmodels.Transaction) bool {
-						return models.Int64Sort(tx1.TotalFees, tx2.TotalFees, order)
-					}
-				},
-				display: func(tx *netmodels.Transaction, opts ...color.Option) string {
-					return color.White(opts...)(fmt.Sprintf("%8d", tx.TotalFees))
-				},
-			}
 		case "CONFIR":
 			transactions.columns[i] = transactionsColumn{
-				name:  fmt.Sprintf("%8s", columns[i]),
-				width: 8,
+				name: fmt.Sprintf("%8s", columns[i]), width: 8,
 				sort: func(order models.Order) models.TransactionsSort {
 					return func(tx1, tx2 *netmodels.Transaction) bool {
 						return models.Int32Sort(tx1.NumConfirmations, tx2.NumConfirmations, order)
@@ -363,25 +194,9 @@ func NewTransactions(cfg *config.View, txs *models.Transactions) *Transactions {
 					return color.Green(opts...)(n)
 				},
 			}
-		case "TXHASH":
-			transactions.columns[i] = transactionsColumn{
-				name:  fmt.Sprintf("%-64s", columns[i]),
-				width: 64,
-				display: func(tx *netmodels.Transaction, opts ...color.Option) string {
-					return color.White(opts...)(fmt.Sprintf("%13s", tx.TxHash))
-				},
-			}
-		case "BLOCKHASH":
-			transactions.columns[i] = transactionsColumn{
-				name: fmt.Sprintf("%-64s", columns[i]),
-				display: func(tx *netmodels.Transaction, opts ...color.Option) string {
-					return color.White(opts...)(fmt.Sprintf("%13s", tx.TxHash))
-				},
-			}
 		case "AMOUNT":
 			transactions.columns[i] = transactionsColumn{
-				name:  fmt.Sprintf("%13s", columns[i]),
-				width: 13,
+				name: fmt.Sprintf("%13s", columns[i]), width: 13,
 				sort: func(order models.Order) models.TransactionsSort {
 					return func(tx1, tx2 *netmodels.Transaction) bool {
 						return models.Int64Sort(tx1.Amount, tx2.Amount, order)
@@ -391,16 +206,62 @@ func NewTransactions(cfg *config.View, txs *models.Transactions) *Transactions {
 					return color.White(opts...)(printer.Sprintf("%13d", tx.Amount))
 				},
 			}
+		case "FEE":
+			transactions.columns[i] = transactionsColumn{
+				name: fmt.Sprintf("%8s", columns[i]), width: 8,
+				sort: func(order models.Order) models.TransactionsSort {
+					return func(tx1, tx2 *netmodels.Transaction) bool {
+						return models.Int64Sort(tx1.TotalFees, tx2.TotalFees, order)
+					}
+				},
+				display: func(tx *netmodels.Transaction, opts ...color.Option) string {
+					return color.White(opts...)(fmt.Sprintf("%8d", tx.TotalFees))
+				},
+			}
+		case "ADDRESSES":
+			transactions.columns[i] = transactionsColumn{
+				name: fmt.Sprintf("%10s", columns[i]), width: 10,
+				sort: func(order models.Order) models.TransactionsSort {
+					return func(tx1, tx2 *netmodels.Transaction) bool {
+						return models.IntSort(len(tx1.DestAddresses), len(tx2.DestAddresses), order)
+					}
+				},
+				display: func(tx *netmodels.Transaction, opts ...color.Option) string {
+					return color.White(opts...)(fmt.Sprintf("%10d", len(tx.DestAddresses)))
+				},
+			}
+		case "TXHASH":
+			transactions.columns[i] = transactionsColumn{
+				name: fmt.Sprintf("%-64s", columns[i]), width: 64,
+				sort: func(order models.Order) models.TransactionsSort {
+					return func(tx1, tx2 *netmodels.Transaction) bool {
+						return models.StringSort(tx1.TxHash, tx2.TxHash, order)
+					}
+				},
+				display: func(tx *netmodels.Transaction, opts ...color.Option) string {
+					return color.White(opts...)(fmt.Sprintf("%13s", tx.TxHash))
+				},
+			}
+		case "BLOCKHASH":
+			transactions.columns[i] = transactionsColumn{
+				name: fmt.Sprintf("%-64s", columns[i]), width: 64,
+				sort: func(order models.Order) models.TransactionsSort {
+					return func(tx1, tx2 *netmodels.Transaction) bool {
+						return models.StringSort(tx1.BlockHash, tx2.BlockHash, order)
+					}
+				},
+				display: func(tx *netmodels.Transaction, opts ...color.Option) string {
+					return color.White(opts...)(fmt.Sprintf("%13s", tx.BlockHash))
+				},
+			}
 		default:
 			transactions.columns[i] = transactionsColumn{
-				name:  fmt.Sprintf("%-21s", columns[i]),
-				width: 21,
+				name: fmt.Sprintf("%-21s", columns[i]), width: 21,
 				display: func(tx *netmodels.Transaction, opts ...color.Option) string {
 					return "column does not exist"
 				},
 			}
 		}
-
 	}
 	return transactions
 }

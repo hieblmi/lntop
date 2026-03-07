@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/hieblmi/lntop/app"
@@ -80,7 +81,7 @@ func (m *Models) RefreshInfo(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	*m.Info = Info{info}
+	m.ApplyInfo(info)
 	return nil
 }
 
@@ -90,7 +91,7 @@ func (m *Models) RefreshForwardingHistory(ctx context.Context) error {
 		return err
 	}
 
-	m.FwdingHist.Update(forwardingEvents)
+	m.ApplyForwardingHistory(forwardingEvents)
 
 	return nil
 }
@@ -147,7 +148,7 @@ func (m *Models) RefreshWalletBalance(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	*m.WalletBalance = WalletBalance{balance}
+	m.ApplyWalletBalance(balance)
 	return nil
 }
 
@@ -160,12 +161,14 @@ func (m *Models) RefreshChannelsBalance(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	*m.ChannelsBalance = ChannelsBalance{balance}
+	m.ApplyChannelsBalance(balance)
 	return nil
 }
 
 type RoutingLog struct {
-	Log []*models.RoutingEvent
+	Log  []*models.RoutingEvent
+	sort RoutingSort
+	mu   sync.RWMutex
 }
 
 const MaxRoutingEvents = 512 // 8K monitor @ 8px per line = 540
@@ -174,20 +177,7 @@ func (m *Models) RefreshRouting(update interface{}) func(context.Context) error 
 	return (func(ctx context.Context) error {
 		hu, ok := update.(*models.RoutingEvent)
 		if ok {
-			found := false
-			for _, hlu := range m.RoutingLog.Log {
-				if hlu.Equals(hu) {
-					hlu.Update(hu)
-					found = true
-					break
-				}
-			}
-			if !found {
-				if len(m.RoutingLog.Log) == MaxRoutingEvents {
-					m.RoutingLog.Log = m.RoutingLog.Log[1:]
-				}
-				m.RoutingLog.Log = append(m.RoutingLog.Log, hu)
-			}
+			m.RoutingLog.Upsert(hu)
 		} else {
 			m.logger.Error("refreshRouting: invalid event data")
 		}
@@ -214,7 +204,63 @@ func (m *Models) RefreshPolicies(update interface{}) func(context.Context) error
 func (m *Models) RefreshCurrentNode(ctx context.Context) (err error) {
 	cur := m.Channels.Current()
 	if cur != nil {
-		m.Channels.CurrentNode, err = m.network.GetNode(ctx, cur.RemotePubKey, true)
+		node, err := m.network.GetNode(ctx, cur.RemotePubKey, true)
+		if err != nil {
+			return err
+		}
+		m.ApplyCurrentNode(node)
 	}
 	return
+}
+
+func (m *Models) ApplyInfo(info *models.Info) {
+	*m.Info = Info{info}
+}
+
+func (m *Models) ApplyWalletBalance(balance *models.WalletBalance) {
+	*m.WalletBalance = WalletBalance{balance}
+}
+
+func (m *Models) ApplyChannelsBalance(balance *models.ChannelsBalance) {
+	*m.ChannelsBalance = ChannelsBalance{balance}
+}
+
+func (m *Models) ApplyTransactions(transactions []*models.Transaction) {
+	for i := range transactions {
+		m.Transactions.Update(transactions[i])
+	}
+}
+
+func (m *Models) ApplyForwardingHistory(events []*models.ForwardingEvent) {
+	m.FwdingHist.Update(events)
+}
+
+func (m *Models) ApplyReceived(invoices []*models.Invoice) {
+	m.Received.Reset(m.Received.StartDateUnix)
+	for _, inv := range invoices {
+		if inv == nil || !inv.Settled {
+			continue
+		}
+		m.Received.Add(inv)
+	}
+}
+
+func (m *Models) ApplyChannels(channels []*models.Channel) {
+	index := map[string]*models.Channel{}
+	for i := range channels {
+		index[channels[i].ChannelPoint] = channels[i]
+		if !m.Channels.Contains(channels[i]) {
+			m.Channels.Add(channels[i])
+		}
+		m.Channels.Update(channels[i])
+	}
+	for _, c := range m.Channels.List() {
+		if _, ok := index[c.ChannelPoint]; !ok {
+			c.Status = models.ChannelClosed
+		}
+	}
+}
+
+func (m *Models) ApplyCurrentNode(node *models.Node) {
+	m.Channels.CurrentNode = node
 }

@@ -2,181 +2,106 @@ package views
 
 import (
 	"fmt"
+	"strings"
 
-	"github.com/awesome-gocui/gocui"
-	"github.com/hieblmi/lntop/ui/color"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
-const (
-	MENU        = "menu"
-	MENU_HEADER = "menu_header"
-	MENU_FOOTER = "menu_footer"
-)
-
-var menu = []string{
-	"CHANNEL",
-	"TRANSAC",
-	"ROUTING",
-	"FWDHIST",
-	"RECEIVED",
+var menuItems = []struct {
+	label    string
+	viewName string
+}{
+	{"CHANNEL", CHANNELS},
+	{"TRANSAC", TRANSACTIONS},
+	{"ROUTING", ROUTING},
+	{"FWDINGHISTORY", FWDINGHIST},
+	{"RECEIVED", RECEIVED},
 }
+
+var (
+	menuBorderStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder(), true, true, true, false).
+			BorderForeground(lipgloss.Color("#5b37b7"))
+
+	menuItemStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#94a3b8"))
+
+	menuActiveStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#e0e7ff")).
+			Background(lipgloss.Color("#312e81")).
+			Bold(true)
+
+	menuTitleStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#a78bfa")).
+			Bold(true)
+)
 
 type Menu struct {
-	view *gocui.View
-
-	cy, oy int
+	Cursor int
 }
 
-func (h Menu) Name() string {
-	return MENU
-}
-
-func (h *Menu) Wrap(v *gocui.View) View {
-	h.view = v
-	return h
-}
-
-func (h Menu) Origin() (int, int) {
-	return 0, h.oy
-}
-
-func (h Menu) Cursor() (int, int) {
-	return 0, h.cy
-}
-
-func (h Menu) Speed() (int, int, int, int) {
-	down := 0
-	if h.cy+h.oy < len(menu)-1 {
-		down = 1
-	}
-	return 0, 0, down, 1
-}
-
-func (h Menu) Limits() (pageSize int, fullSize int) {
-	pageSize = len(menu)
-	fullSize = len(menu)
-	return
-}
-
-func (h *Menu) SetCursor(x, y int) error {
-	err := h.view.SetCursor(x, y)
-	if err != nil {
-		return err
-	}
-	h.cy = y
-	return nil
-}
-
-func (h *Menu) SetOrigin(x, y int) error {
-	err := h.view.SetOrigin(x, y)
-	if err != nil {
-		return err
-	}
-
-	h.oy = y
-	return nil
-}
-
-func (h Menu) Current() string {
-	_, y := h.view.Cursor()
-	if y < len(menu) {
-		switch menu[y] {
-		case "CHANNEL":
-			return CHANNELS
-		case "TRANSAC":
-			return TRANSACTIONS
-		case "ROUTING":
-			return ROUTING
-		case "FWDHIST":
-			return FWDINGHIST
-		case "RECEIVED":
-			return RECEIVED
-		}
+func (m *Menu) Current() string {
+	if m.Cursor >= 0 && m.Cursor < len(menuItems) {
+		return menuItems[m.Cursor].viewName
 	}
 	return ""
 }
 
-func (c Menu) Delete(g *gocui.Gui) error {
-	err := g.DeleteView(MENU_HEADER)
-	if err != nil {
-		return err
+func (m *Menu) SetCurrent(viewName string) {
+	for i := range menuItems {
+		if menuItems[i].viewName == viewName {
+			m.Cursor = i
+			return
+		}
 	}
-
-	err = g.DeleteView(MENU_FOOTER)
-	if err != nil {
-		return err
-	}
-
-	return g.DeleteView(MENU)
 }
 
-func (h Menu) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
-	setCursor := false
-	header, err := g.SetView(MENU_HEADER, x0-1, y0, x1, y0+2, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
+func (m *Menu) CursorDown() {
+	if m.Cursor < len(menuItems)-1 {
+		m.Cursor++
+	}
+}
+
+func (m *Menu) CursorUp() {
+	if m.Cursor > 0 {
+		m.Cursor--
+	}
+}
+
+func (m *Menu) Render(width, height int) string {
+	if width < 1 {
+		width = 1
+	}
+	// Border adds one visible cell on the right side.
+	innerW := width - 1
+	if innerW < 1 {
+		innerW = 1
+	}
+
+	var b strings.Builder
+
+	b.WriteString(menuTitleStyle.Render(padRight("MENU", innerW)))
+	b.WriteString("\n")
+
+	for i, item := range menuItems {
+		line := ansi.Truncate(fmt.Sprintf("%-*s", innerW, item.label), innerW, "")
+		line = padRight(line, innerW)
+		if i == m.Cursor {
+			b.WriteString(menuActiveStyle.Render(line))
+		} else {
+			b.WriteString(menuItemStyle.Render(line))
 		}
-		setCursor = true
-	}
-	header.Frame = false
-	header.BgColor = gocui.ColorGreen
-	header.FgColor = gocui.ColorBlack
-
-	header.Rewind()
-	_, _ = fmt.Fprintln(header, " MENU")
-
-	h.view, err = g.SetView(MENU, x0-1, y0+1, x1, y1-2, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-		setCursor = true
+		b.WriteString("\n")
 	}
 
-	h.view.Frame = false
-	h.view.Highlight = true
-	h.view.SelBgColor = gocui.ColorCyan
-	h.view.SelFgColor = gocui.ColorBlack | gocui.AttrDim
-
-	h.view.Rewind()
-	for i := range menu {
-		_, _ = fmt.Fprintf(h.view, " %-9s\n", menu[i])
-	}
-	_, err = g.SetCurrentView(MENU)
-	if err != nil {
-		return err
+	// Pad remaining height. Account for border top/bottom (2 lines).
+	used := 1 + len(menuItems) + 2
+	for i := 0; i < height-used; i++ {
+		b.WriteString("\n")
 	}
 
-	if setCursor {
-		ox, oy := h.Origin()
-		err := h.SetOrigin(ox, oy)
-		if err != nil {
-			return err
-		}
-
-		cx, cy := h.Cursor()
-		err = h.SetCursor(cx, cy)
-		if err != nil {
-			return err
-		}
-	}
-
-	footer, err := g.SetView(MENU_FOOTER, x0-1, y1-2, x1, y1, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-	}
-	footer.Frame = false
-	footer.BgColor = gocui.ColorCyan
-	footer.FgColor = gocui.ColorBlack
-	footer.Rewind()
-	blackBg := color.Black(color.Background)
-	_, _ = fmt.Fprintf(footer, "%s%s\n",
-		blackBg("F2"), "Close",
-	)
-	return nil
+	return menuBorderStyle.Render(b.String())
 }
 
 func NewMenu() *Menu { return &Menu{} }

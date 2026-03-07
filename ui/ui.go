@@ -3,37 +3,15 @@ package ui
 import (
 	"context"
 
-	"github.com/awesome-gocui/gocui"
-	"github.com/pkg/errors"
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/hieblmi/lntop/app"
 	"github.com/hieblmi/lntop/events"
 )
 
-func Run(ctx context.Context, app *app.App, sub chan *events.Event) error {
-	g, err := gocui.NewGui(gocui.Output256, false)
-	if err != nil {
-		return err
-	}
-	defer g.Close()
-
-	g.Cursor = false
-	ctrl := newController(app)
-	err = ctrl.SetModels(ctx)
-	if err != nil {
-		return err
-	}
-
-	g.SetManagerFunc(ctrl.layout)
-
-	err = setKeyBinding(ctrl, g)
-	if err != nil {
-		return err
-	}
-
-	go ctrl.Listen(ctx, g, sub)
-
-	err = g.MainLoop()
-
-	return errors.WithStack(err)
+func Run(_ context.Context, app *app.App, sub chan *events.Event) error {
+	m := newModel(app, sub)
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	_, err := p.Run()
+	return err
 }
