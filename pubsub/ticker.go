@@ -1,6 +1,7 @@
 package pubsub
 
 import (
+	"bytes"
 	"context"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/hieblmi/lntop/logging"
 	"github.com/hieblmi/lntop/network"
 	"github.com/hieblmi/lntop/network/models"
+	"github.com/hieblmi/lntop/network/options"
 )
 
 type tickerFunc func(context.Context, logging.Logger, *network.Network, chan *events.Event)
@@ -107,3 +109,135 @@ func withTickerChannelsBalance() tickerFunc {
 	}
 }
 
+// withTickerWalletBalance checks if wallet balances changed in the ticker interval.
+func withTickerWalletBalance() tickerFunc {
+	var old *models.WalletBalance
+	return func(ctx context.Context, logger logging.Logger, net *network.Network, sub chan *events.Event) {
+		walletBalance, err := net.GetWalletBalance(ctx)
+		if err != nil {
+			logger.Error("network wallet balance returned an error", logging.Error(err))
+		}
+		if old != nil && walletBalance != nil {
+			if old.TotalBalance != walletBalance.TotalBalance ||
+				old.ConfirmedBalance != walletBalance.ConfirmedBalance ||
+				old.UnconfirmedBalance != walletBalance.UnconfirmedBalance ||
+				old.LockedBalance != walletBalance.LockedBalance ||
+				old.ReservedBalanceAnchorChan != walletBalance.ReservedBalanceAnchorChan {
+				select {
+				case sub <- events.New(events.WalletBalanceUpdated):
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+		old = walletBalance
+	}
+}
+
+// withTickerChannels detects per-channel state changes that don't affect the
+// aggregate channel balance, such as sent/received totals or HTLC counts.
+func withTickerChannels() tickerFunc {
+	var old []*models.Channel
+	return func(ctx context.Context, logger logging.Logger, net *network.Network, sub chan *events.Event) {
+		channels, err := net.ListChannels(ctx, options.WithChannelPending)
+		if err != nil {
+			logger.Error("network channels returned an error", logging.Error(err))
+			return
+		}
+		if old != nil && channelsChanged(old, channels) {
+			select {
+			case sub <- events.NewWithData(events.ChannelsUpdated, channels):
+			case <-ctx.Done():
+				return
+			}
+		}
+		old = cloneChannels(channels)
+	}
+}
+
+func channelsChanged(old, current []*models.Channel) bool {
+	if len(old) != len(current) {
+		return true
+	}
+
+	oldIndex := make(map[string]*models.Channel, len(old))
+	for _, channel := range old {
+		oldIndex[channel.ChannelPoint] = channel
+	}
+
+	for _, channel := range current {
+		prev, ok := oldIndex[channel.ChannelPoint]
+		if !ok || channelStateChanged(prev, channel) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func channelStateChanged(old, current *models.Channel) bool {
+	if old == nil || current == nil {
+		return old != current
+	}
+
+	if old.Status != current.Status ||
+		old.LocalBalance != current.LocalBalance ||
+		old.RemoteBalance != current.RemoteBalance ||
+		old.UnsettledBalance != current.UnsettledBalance ||
+		old.TotalAmountSent != current.TotalAmountSent ||
+		old.TotalAmountReceived != current.TotalAmountReceived ||
+		len(old.PendingHTLC) != len(current.PendingHTLC) {
+		return true
+	}
+
+	for i := range current.PendingHTLC {
+		oldHTLC := old.PendingHTLC[i]
+		currentHTLC := current.PendingHTLC[i]
+		if oldHTLC == nil || currentHTLC == nil {
+			if oldHTLC != currentHTLC {
+				return true
+			}
+			continue
+		}
+
+		if oldHTLC.Incoming != currentHTLC.Incoming ||
+			oldHTLC.Amount != currentHTLC.Amount ||
+			oldHTLC.ExpirationHeight != currentHTLC.ExpirationHeight ||
+			!bytes.Equal(oldHTLC.Hashlock, currentHTLC.Hashlock) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func cloneChannels(channels []*models.Channel) []*models.Channel {
+	cloned := make([]*models.Channel, 0, len(channels))
+	for _, channel := range channels {
+		if channel == nil {
+			cloned = append(cloned, nil)
+			continue
+		}
+
+		copyChannel := *channel
+		if len(channel.PendingHTLC) > 0 {
+			copyChannel.PendingHTLC = make([]*models.HTLC, 0, len(channel.PendingHTLC))
+			for _, htlc := range channel.PendingHTLC {
+				if htlc == nil {
+					copyChannel.PendingHTLC = append(copyChannel.PendingHTLC, nil)
+					continue
+				}
+
+				copyHTLC := *htlc
+				if len(htlc.Hashlock) > 0 {
+					copyHTLC.Hashlock = append([]byte(nil), htlc.Hashlock...)
+				}
+				copyChannel.PendingHTLC = append(copyChannel.PendingHTLC, &copyHTLC)
+			}
+		}
+
+		cloned = append(cloned, &copyChannel)
+	}
+
+	return cloned
+}

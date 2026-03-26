@@ -2,150 +2,69 @@ package views
 
 import (
 	"fmt"
+	"strings"
 
-	"github.com/awesome-gocui/gocui"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 
-	"github.com/hieblmi/lntop/ui/color"
 	"github.com/hieblmi/lntop/ui/models"
 )
 
-const (
-	TRANSACTION        = "transaction"
-	TRANSACTION_HEADER = "transaction_header"
-	TRANSACTION_FOOTER = "transaction_footer"
-)
-
 type Transaction struct {
-	view         *gocui.View
 	transactions *models.Transactions
+	Offset       int
 }
 
-func (c Transaction) Name() string {
-	return TRANSACTION
-}
-
-func (c Transaction) Empty() bool {
-	return c.transactions == nil
-}
-
-func (c *Transaction) Wrap(v *gocui.View) View {
-	c.view = v
-	return c
-}
-
-func (c Transaction) Origin() (int, int) {
-	return c.view.Origin()
-}
-
-func (c Transaction) Cursor() (int, int) {
-	return c.view.Cursor()
-}
-
-func (c Transaction) Speed() (int, int, int, int) {
-	return 1, 1, 1, 1
-}
-
-func (c Transaction) Limits() (pageSize int, fullSize int) {
-	_, pageSize = c.view.Size()
-	fullSize = len(c.view.BufferLines()) - 1
-	return
-}
-
-func (c *Transaction) SetCursor(x, y int) error {
-	return c.view.SetCursor(x, y)
-}
-
-func (c *Transaction) SetOrigin(x, y int) error {
-	return c.view.SetOrigin(x, y)
-}
-
-func (c *Transaction) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
-	header, err := g.SetView(TRANSACTION_HEADER, x0-1, y0, x1+2, y0+2, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
+func (c *Transaction) Name() string { return TRANSACTION }
+func (c *Transaction) ScrollDown()  { c.Offset++ }
+func (c *Transaction) ScrollUp() {
+	if c.Offset > 0 {
+		c.Offset--
 	}
-	header.Frame = false
-	header.BgColor = gocui.ColorGreen
-	header.FgColor = gocui.ColorBlack | gocui.AttrBold
-	header.Rewind()
-	_, _ = fmt.Fprintln(header, "Transaction")
-
-	v, err := g.SetView(TRANSACTION, x0-1, y0+1, x1+2, y1-1, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-	}
-	v.Frame = false
-	c.view = v
-	c.display()
-
-	footer, err := g.SetView(TRANSACTION_FOOTER, x0-1, y1-2, x1, y1, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-	}
-	footer.Frame = false
-	footer.BgColor = gocui.ColorCyan
-	footer.FgColor = gocui.ColorBlack
-	footer.Rewind()
-	blackBg := color.Black(color.Background)
-	_, _ = fmt.Fprintf(footer, "%s%s %s%s %s%s\n",
-		blackBg("F2"), "Menu",
-		blackBg("Enter"), "Transactions",
-		blackBg("F10"), "Quit",
-	)
-	return nil
 }
 
-func (c Transaction) Delete(g *gocui.Gui) error {
-	err := g.DeleteView(TRANSACTION_HEADER)
-	if err != nil {
-		return err
-	}
+func (c *Transaction) Render(width, height int) string {
+	var b strings.Builder
+	b.WriteString(DetailHeaderStyle.Width(width).Render("Transaction"))
+	b.WriteString("\n")
 
-	err = g.DeleteView(TRANSACTION)
-	if err != nil {
-		return err
-	}
-
-	return g.DeleteView(TRANSACTION_FOOTER)
-}
-
-func (c *Transaction) display() {
 	p := message.NewPrinter(language.English)
-	v := c.view
-	v.Rewind()
-	transaction := c.transactions.Current()
-	green := color.Green()
-	cyan := color.Cyan()
-	_, _ = fmt.Fprintln(v, green(" [ Transaction ]"))
-	_, _ = fmt.Fprintf(v, "%s %s\n",
-		cyan("           Date:"), transaction.Date.Format("15:04:05 Jan _2"))
-	_, _ = fmt.Fprintln(v, p.Sprintf("%s %d",
-		cyan("         Amount:"), transaction.Amount))
-	_, _ = fmt.Fprintln(v, p.Sprintf("%s %d",
-		cyan("            Fee:"), transaction.TotalFees))
-	_, _ = fmt.Fprintln(v, p.Sprintf("%s %d",
-		cyan("    BlockHeight:"), transaction.BlockHeight))
-	_, _ = fmt.Fprintln(v, p.Sprintf("%s %d",
-		cyan("NumConfirmations:"), transaction.NumConfirmations))
-	_, _ = fmt.Fprintln(v, p.Sprintf("%s %s",
-		cyan("       BlockHash:"), transaction.BlockHash))
-	_, _ = fmt.Fprintf(v, "%s %s\n",
-		cyan("         TxHash:"), transaction.TxHash)
-	_, _ = fmt.Fprintln(v, "")
-	_, _ = fmt.Fprintln(v, green("[ addresses ]"))
-	for i := range transaction.DestAddresses {
-		_, _ = fmt.Fprintf(v, "%s %s\n",
-			cyan("               -"), transaction.DestAddresses[i])
+	tx := c.transactions.Current()
+	dl := detailLabelStyle.Render
+
+	var lines []string
+	lines = append(lines, sectionTitleStyle.Render(" Transaction "))
+	lines = append(lines, fmt.Sprintf("%s %s", dl("           Date:"), tx.Date.Format("15:04:05 Jan _2")))
+	lines = append(lines, p.Sprintf("%s %d", dl("         Amount:"), tx.Amount))
+	lines = append(lines, p.Sprintf("%s %d", dl("            Fee:"), tx.TotalFees))
+	lines = append(lines, p.Sprintf("%s %d", dl("    BlockHeight:"), tx.BlockHeight))
+	lines = append(lines, p.Sprintf("%s %d", dl("NumConfirmations:"), tx.NumConfirmations))
+	lines = append(lines, p.Sprintf("%s %s", dl("       BlockHash:"), tx.BlockHash))
+	lines = append(lines, fmt.Sprintf("%s %s", dl("         TxHash:"), tx.TxHash))
+	lines = append(lines, "")
+	lines = append(lines, sectionTitleStyle.Render(" Addresses "))
+	for i := range tx.DestAddresses {
+		lines = append(lines, fmt.Sprintf("%s %s", dl("               -"), tx.DestAddresses[i]))
 	}
 
+	dataHeight := height - 2
+	if c.Offset > len(lines)-dataHeight {
+		c.Offset = len(lines) - dataHeight
+	}
+	if c.Offset < 0 {
+		c.Offset = 0
+	}
+	end := min(c.Offset+dataHeight, len(lines))
+	for i := c.Offset; i < end; i++ {
+		b.WriteString(lines[i])
+		b.WriteString("\n")
+	}
+	for i := end - c.Offset; i < dataHeight; i++ {
+		b.WriteString("\n")
+	}
+
+	b.WriteString(renderFooter(width, "F2", "Menu", "Enter", "Transactions", "F9", "Settings", "F10", "Quit"))
+	return b.String()
 }
 
 func NewTransaction(transactions *models.Transactions) *Transaction {

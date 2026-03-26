@@ -63,7 +63,9 @@ func (b *Backend) GetNode(ctx context.Context, pubkey string, includeChannels bo
 }
 
 func (b *Backend) GetWalletBalance(ctx context.Context) (*models.WalletBalance, error) {
-	return &models.WalletBalance{}, nil
+	return &models.WalletBalance{
+		AccountBalance: map[string]*models.WalletAccountBalance{},
+	}, nil
 }
 
 func (b *Backend) GetTransactions(ctx context.Context) ([]*models.Transaction, error) {

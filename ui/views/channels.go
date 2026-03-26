@@ -1,10 +1,11 @@
 package views
 
 import (
-	"bytes"
 	"fmt"
+	"strings"
+	"unicode/utf8"
 
-	"github.com/awesome-gocui/gocui"
+	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 
@@ -14,43 +15,10 @@ import (
 	"github.com/hieblmi/lntop/ui/models"
 )
 
-const (
-	CHANNELS         = "channels"
-	CHANNELS_COLUMNS = "channels_columns"
-	CHANNELS_FOOTER  = "channels_footer"
-)
-
 var DefaultChannelsColumns = []string{
-	"STATUS",
-	"ALIAS",
-	"GAUGE",
-	"LOCAL",
-	"REMOTE",
-	"CAP",
-	"SENT",
-	"RECEIVED",
-	"HTLC",
-	"UNSETTLED",
-	"CFEE",
-	"LAST UPDATE",
-	"AGE",
-	"PRIVATE",
-	"ID",
-}
-
-type Channels struct {
-	cfg *config.View
-
-	columns []channelsColumn
-
-	columnHeadersView *gocui.View
-	columnViews       []*gocui.View
-	view              *gocui.View
-
-	channels *models.Channels
-
-	ox, oy int
-	cx, cy int
+	"STATUS", "ALIAS", "GAUGE", "LOCAL", "REMOTE", "CAP",
+	"SENT", "RECEIVED", "HTLC", "UNSETTLED", "CFEE",
+	"LAST UPDATE", "AGE", "PRIVATE", "ID", "CHANNEL_POINT",
 }
 
 type channelsColumn struct {
@@ -61,271 +29,208 @@ type channelsColumn struct {
 	display func(*netmodels.Channel, ...color.Option) string
 }
 
-func (c Channels) Name() string {
-	return CHANNELS
+type Channels struct {
+	cfg            *config.View
+	columns        []channelsColumn
+	channels       *models.Channels
+	Cursor         int
+	Offset         int
+	ColCursor      int
+	pulseFrame     int
+	lastPulseFrame int
+	prevHTLC       map[string]int
+	prevUnsettled  map[string]int64
+	prevSent       map[string]int64
+	prevReceived   map[string]int64
+	htlcBlink      map[string]int
+	unsettledBlink map[string]int
+	sentFlash      map[string]int
+	receivedFlash  map[string]int
 }
 
-func (c *Channels) Wrap(v *gocui.View) View {
-	c.view = v
-	return c
+func (c *Channels) Name() string { return CHANNELS }
+
+func (c *Channels) CursorDown() {
+	if c.Cursor < c.channels.Len()-1 {
+		c.Cursor++
+	}
 }
 
-func (c Channels) currentColumnIndex() int {
-	x := c.ox + c.cx
-	index := 0
-	sum := 0
+func (c *Channels) CursorUp() {
+	if c.Cursor > 0 {
+		c.Cursor--
+	}
+}
+
+func (c *Channels) ColumnRight() {
+	if c.ColCursor < len(c.columns)-1 {
+		c.ColCursor++
+	}
+}
+
+func (c *Channels) ColumnLeft() {
+	if c.ColCursor > 0 {
+		c.ColCursor--
+	}
+}
+
+func (c *Channels) Home() { c.Cursor = 0 }
+
+func (c *Channels) End() {
+	if n := c.channels.Len(); n > 0 {
+		c.Cursor = n - 1
+	}
+}
+
+func (c *Channels) PageDown(pageSize int) {
+	n := c.channels.Len()
+	c.Cursor += pageSize
+	if c.Cursor >= n {
+		c.Cursor = n - 1
+	}
+	if c.Cursor < 0 {
+		c.Cursor = 0
+	}
+}
+
+func (c *Channels) PageUp(pageSize int) {
+	c.Cursor -= pageSize
+	if c.Cursor < 0 {
+		c.Cursor = 0
+	}
+}
+
+func (c *Channels) Index() int { return c.Cursor }
+
+func (c *Channels) SetPulseFrame(frame int) {
+	if frame != c.lastPulseFrame {
+		c.decayBlinks(c.htlcBlink)
+		c.decayBlinks(c.unsettledBlink)
+		c.decayBlinks(c.sentFlash)
+		c.decayBlinks(c.receivedFlash)
+		c.lastPulseFrame = frame
+	}
+	c.pulseFrame = frame
+}
+
+func (c *Channels) HasAnimatedAlerts() bool {
+	if len(c.htlcBlink) > 0 || len(c.unsettledBlink) > 0 || len(c.sentFlash) > 0 || len(c.receivedFlash) > 0 {
+		return true
+	}
+	for _, ch := range c.channels.List() {
+		if len(ch.PendingHTLC) > 0 || ch.UnsettledBalance > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Channels) Sort(column string, order models.Order) {
+	index := c.ColCursor
+	if index >= len(c.columns) {
+		return
+	}
+	col := c.columns[index]
+	if col.sort == nil {
+		return
+	}
+	c.channels.Sort(col.sort(order))
 	for i := range c.columns {
-		sum += c.columns[i].width + 1
-		if x < sum {
-			return index
-		}
-		index++
-	}
-	return index
-}
-
-func (c Channels) Sort(column string, order models.Order) {
-	if column == "" {
-		index := c.currentColumnIndex()
-		if index >= len(c.columns) {
-			return
-		}
-		col := c.columns[index]
-		if col.sort == nil {
-			return
-		}
-
-		c.channels.Sort(col.sort(order))
-		for i := range c.columns {
-			c.columns[i].sorted = (i == index)
-		}
+		c.columns[i].sorted = (i == index)
 	}
 }
 
-func (c Channels) Origin() (int, int) {
-	return c.ox, c.oy
-}
-
-func (c Channels) Cursor() (int, int) {
-	return c.cx, c.cy
-}
-
-func (c *Channels) SetCursor(cx, cy int) error {
-	if err := cursorCompat(c.columnHeadersView, cx, 0); err != nil {
-		return err
-	}
-	err := c.columnHeadersView.SetCursor(cx, 0)
-	if err != nil {
-		return err
-	}
-
-	for _, cv := range c.columnViews {
-		if err := cursorCompat(c.view, cx, cy); err != nil {
-			return err
-		}
-		err = cv.SetCursor(cx, cy)
-		if err != nil {
-			return err
-		}
-	}
-
-	c.cx, c.cy = cx, cy
-	return nil
-}
-
-func (c *Channels) SetOrigin(ox, oy int) error {
-	err := c.columnHeadersView.SetOrigin(ox, 0)
-	if err != nil {
-		return err
-	}
-	err = c.view.SetOrigin(ox, oy)
-	if err != nil {
-		return err
-	}
-
-	for _, cv := range c.columnViews {
-		err = cv.SetOrigin(0, oy)
-		if err != nil {
-			return err
-		}
-	}
-
-	c.ox, c.oy = ox, oy
-	return nil
-}
-
-func (c *Channels) Speed() (int, int, int, int) {
-	current := c.currentColumnIndex()
-	up := 0
-	down := 0
-	if c.Index() > 0 {
-		up = 1
-	}
-	if c.Index() < c.channels.Len()-1 {
-		down = 1
-	}
-	if current > len(c.columns)-1 {
-		return 0, c.columns[current-1].width + 1, down, up
-	}
-	if current == 0 {
-		return c.columns[0].width + 1, 0, down, up
-	}
-	return c.columns[current].width + 1,
-		c.columns[current-1].width + 1,
-		down, up
-}
-
-func (c *Channels) Limits() (pageSize int, fullSize int) {
-	_, pageSize = c.view.Size()
-	fullSize = c.channels.Len()
-	return
-}
-
-func (c Channels) Index() int {
-	_, oy := c.Origin()
-	_, cy := c.Cursor()
-	return cy + oy
-}
-
-func (c *Channels) Delete(g *gocui.Gui) error {
-	err := g.DeleteView(CHANNELS_COLUMNS)
-	if err != nil {
-		return err
-	}
-
-	err = g.DeleteView(CHANNELS)
-	if err != nil {
-		return err
-	}
-
-	for _, cv := range c.columnViews {
-		err = g.DeleteView(cv.Name())
-		if err != nil {
-			return err
-		}
-	}
-	c.columnViews = c.columnViews[:0]
-	return g.DeleteView(CHANNELS_FOOTER)
-}
-
-func (c *Channels) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
-	var err error
-	setCursor := false
-	c.columnHeadersView, err = g.SetView(CHANNELS_COLUMNS, x0-1, y0, x1+2, y0+2, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-		setCursor = true
-	}
-	c.columnHeadersView.Frame = false
-	c.columnHeadersView.BgColor = gocui.ColorGreen
-	c.columnHeadersView.FgColor = gocui.ColorBlack
-
-	c.view, err = g.SetView(CHANNELS, x0-1, y0+1, x1+2, y1-1, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-		setCursor = true
-	}
-	c.view.Frame = false
-	c.view.Autoscroll = false
-	c.view.SelBgColor = gocui.ColorCyan
-	c.view.SelFgColor = gocui.ColorBlack | gocui.AttrDim
-	c.view.Highlight = false
-	c.display(g)
-
-	if setCursor {
-		ox, oy := c.Origin()
-		err := c.SetOrigin(ox, oy)
-		if err != nil {
-			return err
-		}
-
-		cx, cy := c.Cursor()
-		err = c.SetCursor(cx, cy)
-		if err != nil {
-			return err
-		}
-	}
-
-	footer, err := g.SetView(CHANNELS_FOOTER, x0-1, y1-2, x1+2, y1, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-	}
-	footer.Frame = false
-	footer.BgColor = gocui.ColorCyan
-	footer.FgColor = gocui.ColorBlack
-	footer.Rewind()
-	blackBg := color.Black(color.Background)
-	_, _ = fmt.Fprintf(footer, "%s%s %s%s %s%s\n",
-		blackBg("F2"), "Menu",
-		blackBg("Enter"), "Channel",
-		blackBg("F10"), "Quit",
-	)
-	return nil
-}
-
-func (c *Channels) display(g *gocui.Gui) {
-	c.columnHeadersView.Rewind()
-	var buffer bytes.Buffer
-	currentColumnIndex := c.currentColumnIndex()
+func (c *Channels) Render(width, height int) string {
+	var b strings.Builder
+	colWidths := make([]int, len(c.columns))
 	for i := range c.columns {
-		if currentColumnIndex == i {
-			buffer.WriteString(color.Cyan(color.Background)(c.columns[i].name))
-			buffer.WriteString(" ")
-			continue
-		} else if c.columns[i].sorted {
-			buffer.WriteString(color.Magenta(color.Background)(c.columns[i].name))
-			buffer.WriteString(" ")
-			continue
-		}
-		buffer.WriteString(c.columns[i].name)
-		buffer.WriteString(" ")
+		colWidths[i] = c.columns[i].width
 	}
-	_, _ = fmt.Fprintln(c.columnHeadersView, buffer.String())
+	visibleStart, visibleEnd := visibleColumnRange(width, c.ColCursor, colWidths)
 
-	if len(c.columnViews) == 0 {
-		c.columnViews = make([]*gocui.View, len(c.columns))
-		x0, y0, _, y1 := c.view.Dimensions()
-		for i := range c.columns {
-			width := c.columns[i].width
-			cc, _ := g.SetView("channel_content_"+c.columns[i].name, x0, y0, x0+width+2, y1, 0)
-			cc.Frame = false
-			cc.Autoscroll = false
-			cc.SelBgColor = gocui.ColorCyan
-			cc.SelFgColor = gocui.ColorBlack | gocui.AttrDim
-			cc.Highlight = true
-			c.columnViews[i] = cc
+	// Column header.
+	var hdr strings.Builder
+	for i := visibleStart; i < visibleEnd; i++ {
+		col := c.columns[i]
+		name := renderHeaderCell(col.name, col.width, DefaultColStyle)
+		if i == c.ColCursor {
+			name = renderHeaderCell(col.name, col.width, ActiveColStyle)
+		} else if col.sorted {
+			name = renderHeaderCell(col.name, col.width, SortedColStyle)
 		}
+		hdr.WriteString(name)
+		hdr.WriteString(" ")
 	}
-	for ci, item := range c.channels.List() {
-		x0, y0, _, y1 := c.view.Dimensions()
-		x0 -= c.ox
-		for i := range c.columns {
+	b.WriteString(renderTableHeader(hdr.String(), width))
+	b.WriteString("\n")
+
+	// Data rows.
+	dataHeight := height - 2 // header + footer
+	items := c.channels.List()
+	c.syncAlertTransitions(items)
+
+	if c.Cursor >= len(items) {
+		c.Cursor = len(items) - 1
+	}
+	if c.Cursor < 0 {
+		c.Cursor = 0
+	}
+	if c.Cursor < c.Offset {
+		c.Offset = c.Cursor
+	}
+	if c.Cursor >= c.Offset+dataHeight {
+		c.Offset = c.Cursor - dataHeight + 1
+	}
+
+	end := c.Offset + dataHeight
+	if end > len(items) {
+		end = len(items)
+	}
+
+	for idx := c.Offset; idx < end; idx++ {
+		item := items[idx]
+		var row strings.Builder
+		for i := visibleStart; i < visibleEnd; i++ {
+			col := c.columns[i]
 			var opt color.Option
-			if currentColumnIndex == i {
+			if i == c.ColCursor {
 				opt = color.Bold
 			}
-			width := c.columns[i].width
-			cc, _ := g.SetView("channel_content_"+c.columns[i].name, x0, y0, x0+width+2, y1, 0)
-			c.columnViews[i] = cc
-			if ci == 0 {
-				cc.Rewind()
-			}
-			_, _ = fmt.Fprintln(cc, c.columns[i].display(item, opt), " ")
-			x0 += width + 1
+			row.WriteString(fitCell(col.display(item, opt), col.width))
+			row.WriteString(" ")
 		}
+		line := row.String()
+		if idx == c.Cursor {
+			line = selectedRow(line, width)
+		} else {
+			line = safeTruncRow(line, width)
+		}
+		b.WriteString(line)
+		b.WriteString("\n")
 	}
+
+	// Pad empty rows.
+	for i := end - c.Offset; i < dataHeight; i++ {
+		b.WriteString("\n")
+	}
+
+	// Footer.
+	b.WriteString(renderFooter(width, "F2", "Menu", "Enter", "Channel", "F9", "Settings", "F10", "Quit"))
+	return b.String()
 }
 
 func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 	channels := &Channels{
-		cfg:      cfg,
-		channels: chans,
+		cfg:            cfg,
+		channels:       chans,
+		prevHTLC:       make(map[string]int),
+		prevUnsettled:  make(map[string]int64),
+		prevSent:       make(map[string]int64),
+		prevReceived:   make(map[string]int64),
+		htlcBlink:      make(map[string]int),
+		unsettledBlink: make(map[string]int),
+		sentFlash:      make(map[string]int),
+		receivedFlash:  make(map[string]int),
 	}
 
 	printer := message.NewPrinter(language.English)
@@ -345,7 +250,6 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 				name:  fmt.Sprintf("%-8s", columns[i]),
 				sort: func(order models.Order) models.ChannelsSort {
 					return func(c1, c2 *netmodels.Channel) bool {
-						// status meanings are kinda the opposite of their numerical value
 						return models.IntSort(-c1.Status, -c2.Status, order)
 					}
 				},
@@ -382,21 +286,24 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 					}
 				},
 				display: func(c *netmodels.Channel, opts ...color.Option) string {
-					index := int(c.LocalBalance * int64(15) / c.Capacity)
-					var buffer bytes.Buffer
-					cyan := color.Cyan(opts...)
-					white := color.White(opts...)
+					pct := float64(c.LocalBalance) / float64(c.Capacity)
+					filled := int(pct * 15)
+					var buf strings.Builder
 					for i := 0; i < 15; i++ {
-						if i < index {
-							buffer.WriteString(cyan("|"))
-							continue
+						if i < filled {
+							ratio := float64(i) / 15.0
+							if ratio < 0.5 {
+								buf.WriteString(gaugeGreenStyle.Render("\u2588"))
+							} else if ratio < 0.75 {
+								buf.WriteString(gaugeYellowStyle.Render("\u2588"))
+							} else {
+								buf.WriteString(gaugeRedStyle.Render("\u2588"))
+							}
+						} else {
+							buf.WriteString(gaugeEmptyStyle.Render("\u2591"))
 						}
-						buffer.WriteString(" ")
 					}
-					return fmt.Sprintf("%s%s%s",
-						white("["),
-						buffer.String(),
-						white(fmt.Sprintf("] %2d%%", c.LocalBalance*100/c.Capacity)))
+					return fmt.Sprintf("%s %2d%%", buf.String(), c.LocalBalance*100/c.Capacity)
 				},
 			}
 		case "LOCAL":
@@ -448,7 +355,11 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 					}
 				},
 				display: func(c *netmodels.Channel, opts ...color.Option) string {
-					return color.Cyan(opts...)(printer.Sprintf("%12d", c.TotalAmountSent))
+					value := printer.Sprintf("%12d", c.TotalAmountSent)
+					if channels.sentFlash[c.ChannelPoint] > 0 {
+						return channels.renderTrafficFlash(value, false)
+					}
+					return color.Cyan(opts...)(value)
 				},
 			}
 		case "RECEIVED":
@@ -461,7 +372,11 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 					}
 				},
 				display: func(c *netmodels.Channel, opts ...color.Option) string {
-					return color.Cyan(opts...)(printer.Sprintf("%12d", c.TotalAmountReceived))
+					value := printer.Sprintf("%12d", c.TotalAmountReceived)
+					if channels.receivedFlash[c.ChannelPoint] > 0 {
+						return channels.renderTrafficFlash(value, true)
+					}
+					return color.Cyan(opts...)(value)
 				},
 			}
 		case "HTLC":
@@ -474,7 +389,15 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 					}
 				},
 				display: func(c *netmodels.Channel, opts ...color.Option) string {
-					return color.Yellow(opts...)(fmt.Sprintf("%5d", len(c.PendingHTLC)))
+					count := len(c.PendingHTLC)
+					value := fmt.Sprintf("%5d", count)
+					if channels.htlcBlink[c.ChannelPoint] > 0 {
+						return channels.renderExitBlink(value, true)
+					}
+					if count == 0 {
+						return color.Yellow(opts...)(value)
+					}
+					return channels.renderAlertValue(value, true)
 				},
 			}
 		case "UNSETTLED":
@@ -487,7 +410,14 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 					}
 				},
 				display: func(c *netmodels.Channel, opts ...color.Option) string {
-					return color.Yellow(opts...)(printer.Sprintf("%10d", c.UnsettledBalance))
+					value := printer.Sprintf("%10d", c.UnsettledBalance)
+					if channels.unsettledBlink[c.ChannelPoint] > 0 {
+						return channels.renderExitBlink(value, false)
+					}
+					if c.UnsettledBalance == 0 {
+						return color.Yellow(opts...)(value)
+					}
+					return channels.renderAlertValue(value, false)
 				},
 			}
 		case "CFEE":
@@ -527,7 +457,6 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 				name:  fmt.Sprintf("%-7s", columns[i]),
 				sort: func(order models.Order) models.ChannelsSort {
 					return func(c1, c2 *netmodels.Channel) bool {
-						// public > private
 						return models.BoolSort(!c1.Private, !c2.Private, order)
 					}
 				},
@@ -552,6 +481,19 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 						return fmt.Sprintf("%-19s", "")
 					}
 					return color.White(opts...)(fmt.Sprintf("%-19d", c.ID))
+				},
+			}
+		case "CHANNEL_POINT":
+			channels.columns[i] = channelsColumn{
+				width: 66,
+				name:  fmt.Sprintf("%-66s", columns[i]),
+				sort: func(order models.Order) models.ChannelsSort {
+					return func(c1, c2 *netmodels.Channel) bool {
+						return models.StringSort(c1.ChannelPoint, c2.ChannelPoint, order)
+					}
+				},
+				display: func(c *netmodels.Channel, opts ...color.Option) string {
+					return color.White(opts...)(fmt.Sprintf("%-66s", c.ChannelPoint))
 				},
 			}
 		case "SCID":
@@ -589,8 +531,7 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 				name:  fmt.Sprintf("%-8s", columns[i]),
 				sort: func(order models.Order) models.ChannelsSort {
 					return func(c1, c2 *netmodels.Channel) bool {
-						var c1f uint64
-						var c2f uint64
+						var c1f, c2f uint64
 						if c1.LocalPolicy != nil {
 							c1f = uint64(c1.LocalPolicy.FeeBaseMsat)
 						}
@@ -614,8 +555,7 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 				name:  fmt.Sprintf("%-8s", columns[i]),
 				sort: func(order models.Order) models.ChannelsSort {
 					return func(c1, c2 *netmodels.Channel) bool {
-						var c1f uint64
-						var c2f uint64
+						var c1f, c2f uint64
 						if c1.LocalPolicy != nil {
 							c1f = uint64(c1.LocalPolicy.FeeRateMilliMsat)
 						}
@@ -639,8 +579,7 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 				name:  fmt.Sprintf("%-7s", columns[i]),
 				sort: func(order models.Order) models.ChannelsSort {
 					return func(c1, c2 *netmodels.Channel) bool {
-						var c1f uint64
-						var c2f uint64
+						var c1f, c2f uint64
 						if c1.RemotePolicy != nil {
 							c1f = uint64(c1.RemotePolicy.FeeBaseMsat)
 						}
@@ -664,8 +603,7 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 				name:  fmt.Sprintf("%-7s", columns[i]),
 				sort: func(order models.Order) models.ChannelsSort {
 					return func(c1, c2 *netmodels.Channel) bool {
-						var c1f uint64
-						var c2f uint64
+						var c1f, c2f uint64
 						if c1.RemotePolicy != nil {
 							c1f = uint64(c1.RemotePolicy.FeeRateMilliMsat)
 						}
@@ -747,12 +685,10 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 					result := printer.Sprintf("%10s", FormatAge(c.Age))
 					if cfg.Options.GetOption("AGE", "color") == "color" {
 						return ColorizeAge(c.Age, result, opts...)
-					} else {
-						return color.White(opts...)(result)
 					}
+					return color.White(opts...)(result)
 				},
 			}
-
 		default:
 			channels.columns[i] = channelsColumn{
 				width: 21,
@@ -765,6 +701,122 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 	}
 
 	return channels
+}
+
+func (c *Channels) renderAlertValue(value string, htlc bool) string {
+	baseBg := lipgloss.Color("#22c55e")
+	baseFg := lipgloss.Color("#111827")
+	hotBg := lipgloss.Color("#ffff00")
+	hotFg := lipgloss.Color("#111827")
+
+	width := utf8.RuneCountInString(value)
+	if width == 0 {
+		return value
+	}
+
+	hot := c.pulseFrame % width
+	trail := (hot - 1 + width) % width
+
+	var b strings.Builder
+	for pos, r := range value {
+		style := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(baseFg).
+			Background(baseBg)
+
+		switch pos {
+		case hot:
+			style = style.Foreground(hotFg).Background(hotBg)
+		case trail:
+			style = style.Background(hotBg)
+		}
+
+		b.WriteString(style.Render(string(r)))
+	}
+
+	return b.String()
+}
+
+func (c *Channels) renderExitBlink(value string, htlc bool) string {
+	flashFg := lipgloss.Color("#111827")
+	flashBg := lipgloss.Color("#ffff00")
+	idleFg := lipgloss.Color("#111827")
+	idleBg := lipgloss.Color("#22c55e")
+
+	style := lipgloss.NewStyle().Bold(true).Foreground(idleFg).Background(idleBg)
+	if c.pulseFrame%2 == 0 {
+		style = lipgloss.NewStyle().Bold(true).Foreground(flashFg).Background(flashBg)
+	}
+	return style.Render(value)
+}
+
+func (c *Channels) renderTrafficFlash(value string, received bool) string {
+	flashFg := lipgloss.Color("#f8fafc")
+	flashBg := lipgloss.Color("#dc2626")
+	if received {
+		flashBg = lipgloss.Color("#16a34a")
+	}
+
+	style := lipgloss.NewStyle().Bold(true).Foreground(flashFg)
+	if c.pulseFrame%2 == 0 {
+		style = style.Background(flashBg)
+	}
+	return style.Render(value)
+}
+
+func (c *Channels) syncAlertTransitions(items []*netmodels.Channel) {
+	active := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		key := item.ChannelPoint
+		active[key] = struct{}{}
+
+		curHTLC := len(item.PendingHTLC)
+		if prev, ok := c.prevHTLC[key]; ok && prev > 0 && curHTLC == 0 {
+			c.htlcBlink[key] = 4
+		}
+		c.prevHTLC[key] = curHTLC
+
+		curUnsettled := item.UnsettledBalance
+		if prev, ok := c.prevUnsettled[key]; ok && prev > 0 && curUnsettled == 0 {
+			c.unsettledBlink[key] = 4
+		}
+		c.prevUnsettled[key] = curUnsettled
+
+		curSent := item.TotalAmountSent
+		if prev, ok := c.prevSent[key]; ok && curSent > prev {
+			c.sentFlash[key] = 2
+		}
+		c.prevSent[key] = curSent
+
+		curReceived := item.TotalAmountReceived
+		if prev, ok := c.prevReceived[key]; ok && curReceived > prev {
+			c.receivedFlash[key] = 2
+		}
+		c.prevReceived[key] = curReceived
+	}
+
+	for key := range c.prevHTLC {
+		if _, ok := active[key]; !ok {
+			delete(c.prevHTLC, key)
+			delete(c.prevUnsettled, key)
+			delete(c.prevSent, key)
+			delete(c.prevReceived, key)
+			delete(c.htlcBlink, key)
+			delete(c.unsettledBlink, key)
+			delete(c.sentFlash, key)
+			delete(c.receivedFlash, key)
+		}
+	}
+}
+
+func (c *Channels) decayBlinks(blinks map[string]int) {
+	for key, count := range blinks {
+		if count <= 1 {
+			delete(blinks, key)
+			continue
+		}
+		blinks[key] = count - 1
+	}
 }
 
 func channelDisabled(c *netmodels.Channel, opts ...color.Option) string {

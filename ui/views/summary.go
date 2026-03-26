@@ -3,8 +3,9 @@ package views
 import (
 	"bytes"
 	"fmt"
+	"strings"
 
-	"github.com/awesome-gocui/gocui"
+	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 
@@ -13,58 +14,109 @@ import (
 	"github.com/hieblmi/lntop/ui/models"
 )
 
-const (
-	SUMMARY_LEFT  = "summary_left"
-	SUMMARY_RIGHT = "summary_right"
+// Panel styles with rounded borders.
+var (
+	channelsPanelStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("#5b37b7")).
+				Padding(0, 1)
+
+	walletPanelStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("#2563eb")).
+				Padding(0, 1)
+
+	accountingPanelStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("#0f766e")).
+				Padding(0, 1)
+
+	panelTitleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#a78bfa"))
+
+	panelLabelStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#6366f1"))
+
+	accountingSpinnerStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#f59e0b")).
+				Bold(true)
+
+	windowInputStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#ecfeff")).
+				Background(lipgloss.Color("#134e4a")).
+				Bold(true).
+				Padding(0, 1)
+
+	windowInputIdleStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#ccfbf1")).
+				Background(lipgloss.Color("#0f766e")).
+				Padding(0, 1)
+
+	windowErrorStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#fca5a5"))
+
+	forwardingWindowModalStyle = lipgloss.NewStyle().
+					Border(lipgloss.RoundedBorder()).
+					BorderForeground(lipgloss.Color("#0f766e")).
+					Background(lipgloss.Color("#091411")).
+					Padding(1, 2)
+
+	forwardingWindowHintStyle = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#99f6e4"))
+
+	selectedSettingLabelStyle = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#818cf8")).
+					Bold(true)
 )
 
+type SettingsModalState struct {
+	Open                     bool
+	Cursor                   int
+	Error                    string
+	ForwardingWindowInput    string
+	ForwardingMaxEventsInput string
+	ReceivedStartDateInput   string
+}
+
 type Summary struct {
-	left            *gocui.View
-	right           *gocui.View
-	info            *models.Info
-	channelsBalance *models.ChannelsBalance
-	walletBalance   *models.WalletBalance
-	channels        *models.Channels
+	info                  *models.Info
+	channelsBalance       *models.ChannelsBalance
+	walletBalance         *models.WalletBalance
+	channels              *models.Channels
+	fwdingHist            *models.FwdingHist
+	received              *models.Received
+	forwardingHistLoading bool
+	settings              SettingsModalState
+	pulseFrame            int
 }
 
-func (s *Summary) Set(g *gocui.Gui, x0, y0, x1, y1 int) error {
-	var err error
-	s.left, err = g.SetView(SUMMARY_LEFT, x0, y0, x1/2, y1, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
+func (s *Summary) Render(width int) string {
+	if s.info.Info == nil || s.channelsBalance.ChannelsBalance == nil || s.walletBalance.WalletBalance == nil || s.fwdingHist == nil {
+		return ""
 	}
-	s.left.Frame = false
-	s.left.Wrap = true
 
-	s.right, err = g.SetView(SUMMARY_RIGHT, x1/2, y0, x1, y1, 0)
-	if err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-	}
-	s.right.Frame = false
-	s.right.Wrap = true
-	s.display()
-	return nil
-}
-
-func (s *Summary) display() {
-	s.left.Clear()
 	p := message.NewPrinter(language.English)
 	green := color.Green()
 	yellow := color.Yellow()
-	cyan := color.Cyan()
 	red := color.Red()
-	_, _ = fmt.Fprintln(s.left, green("[ Channels ]"))
-	_, _ = fmt.Fprintln(s.left, p.Sprintf("%s %s (%s|%s)",
-		cyan("balance:"),
+
+	label := panelLabelStyle.Render
+	stats := s.fwdingHist.Stats()
+
+	// Left panel: channels.
+	var left strings.Builder
+	left.WriteString(panelTitleStyle.Render("Channels"))
+	left.WriteString("\n")
+	left.WriteString("\n")
+	left.WriteString(p.Sprintf("%s %s (%s|%s)",
+		label("balance:"),
 		formatAmount(s.channelsBalance.Balance+s.channelsBalance.PendingOpenBalance),
 		green(p.Sprintf("%s", formatAmount(s.channelsBalance.Balance))),
 		yellow(p.Sprintf("%s", formatAmount(s.channelsBalance.PendingOpenBalance))),
 	))
-	// Count channels with disabled routing policies.
+	left.WriteString("\n")
+
 	disabledLocal, disabledRemote := 0, 0
 	for _, ch := range s.channels.List() {
 		if ch.LocalPolicy != nil && ch.LocalPolicy.Disabled {
@@ -74,65 +126,379 @@ func (s *Summary) display() {
 			disabledRemote++
 		}
 	}
-	_, _ = fmt.Fprintf(s.left, "%s %d %s %d %s %d %s\n",
-		cyan("state  :"),
+	left.WriteString(fmt.Sprintf("%s %d %s %d %s %d %s",
+		label("state  :"),
 		s.info.NumActiveChannels, green("on"),
 		s.info.NumPendingChannels, yellow("pending"),
 		s.info.NumInactiveChannels, red("off"),
-	)
-	if disabledLocal > 0 || disabledRemote > 0 {
-		_, _ = fmt.Fprintf(s.left, "%s %d %s %d %s\n",
-			cyan("disabled:"),
-			disabledLocal, red("local⇈"),
-			disabledRemote, red("remote⇊"),
-		)
-	}
-	_, _ = fmt.Fprintf(s.left, "%s %s\n",
-		cyan("gauge  :"),
-		gaugeTotal(s.channelsBalance.Balance, s.channels.List()),
-	)
-
-	s.right.Clear()
-	_, _ = fmt.Fprintln(s.right, green("[ Wallet ]"))
-	_, _ = fmt.Fprintln(s.right, p.Sprintf("%s %s (%s|%s)",
-		cyan("balance:"),
-		formatAmount(s.walletBalance.TotalBalance),
-		green(p.Sprintf("%s", formatAmount(s.walletBalance.ConfirmedBalance))),
-		yellow(p.Sprintf("%s", formatAmount(s.walletBalance.UnconfirmedBalance))),
 	))
+	left.WriteString("\n")
+	if disabledLocal > 0 || disabledRemote > 0 {
+		left.WriteString(fmt.Sprintf("%s %d %s %d %s",
+			label("disabled:"),
+			disabledLocal, red("local\u21c8"),
+			disabledRemote, red("remote\u21ca"),
+		))
+		left.WriteString("\n")
+	}
+	left.WriteString(fmt.Sprintf("%s %s",
+		label("gauge  :"),
+		gaugeTotal(s.channelsBalance.Balance, s.channels.List()),
+	))
+
+	// Right panel: wallet.
+	var right strings.Builder
+	walletFields := []struct {
+		label string
+		value string
+	}{
+		{"total_balance", formatSats(p, s.walletBalance.TotalBalance)},
+		{"confirmed_balance", formatSats(p, s.walletBalance.ConfirmedBalance)},
+		{"unconfirmed_balance", formatSats(p, s.walletBalance.UnconfirmedBalance)},
+		{"locked_balance", formatSats(p, s.walletBalance.LockedBalance)},
+		{"reserved_balance_anchor_chan", formatSats(p, s.walletBalance.ReservedBalanceAnchorChan)},
+	}
+	walletLabelWidth := 0
+	walletValueWidth := 0
+	for _, field := range walletFields {
+		if w := lipgloss.Width(field.label + ":"); w > walletLabelWidth {
+			walletLabelWidth = w
+		}
+		if w := lipgloss.Width(field.value); w > walletValueWidth {
+			walletValueWidth = w
+		}
+	}
+	right.WriteString(panelTitleStyle.Render("Wallet"))
+	right.WriteString("\n")
+	right.WriteString("\n")
+	for i, field := range walletFields {
+		if i > 0 {
+			right.WriteString("\n")
+		}
+		right.WriteString(renderAlignedField(field.label+":", field.value, walletLabelWidth, walletValueWidth))
+	}
+
+	// Accounting panel follows the currently filtered forwarding history.
+	accountingFields := []struct {
+		label string
+		value string
+	}{
+		{"Profit", formatMsatAsSats(p, stats.FeesTotalMsat)},
+		{"Total Forwarded", formatSats(p, int64(stats.ForwardedTotal))},
+		{"Biggest Forward", formatSats(p, int64(stats.LargestForward))},
+		{"Smallest Forward", formatSats(p, int64(stats.SmallestForward))},
+		{"Most Profitable Forward", formatMsatAsSats(p, stats.MostProfitableFeeMsat)},
+	}
+	accountingLabelWidth := 0
+	accountingValueWidth := 0
+	for _, field := range accountingFields {
+		if w := lipgloss.Width(field.label + ":"); w > accountingLabelWidth {
+			accountingLabelWidth = w
+		}
+		if w := lipgloss.Width(field.value); w > accountingValueWidth {
+			accountingValueWidth = w
+		}
+	}
+
+	var accounting strings.Builder
+	accounting.WriteString(panelTitleStyle.Render("Accounting (FwdingHistory)"))
+	if s.forwardingHistLoading {
+		accounting.WriteString(" ")
+		accounting.WriteString(accountingSpinnerStyle.Render(summarySpinnerFrame(s.pulseFrame)))
+		accounting.WriteString(" ")
+		accounting.WriteString(panelLabelStyle.Render("loading"))
+	}
+	accounting.WriteString("\n")
+	accounting.WriteString("\n")
+	accounting.WriteString(fmt.Sprintf("%s %s",
+		label("Forwarding Events Since:"),
+		s.renderWindowInput(),
+	))
+	accounting.WriteString("\n")
+	accounting.WriteString(panelLabelStyle.Render("(-1m, -1h, -1d, -1M, -1y)"))
+	for _, field := range accountingFields {
+		accounting.WriteString("\n")
+		accounting.WriteString(renderAlignedField(field.label+":", field.value, accountingLabelWidth, accountingValueWidth))
+	}
+	accounting.WriteString("\n")
+	accounting.WriteString(fmt.Sprintf("%s %s",
+		label("Hottest link:"),
+		s.hottestLinkDisplay(stats),
+	))
+
+	return s.layoutPanels(width, left.String(), right.String(), accounting.String())
 }
 
+// gaugeTotal renders a gradient-colored balance gauge.
 func gaugeTotal(balance int64, channels []*netmodels.Channel) string {
 	capacity := int64(0)
 	for i := range channels {
 		capacity += channels[i].Capacity
 	}
-
 	if capacity == 0 {
 		return fmt.Sprintf("[%20s]  0%%", "")
 	}
 
-	index := int(balance * int64(20) / capacity)
+	pct := float64(balance) / float64(capacity)
+	filled := int(pct * 20)
 	var buffer bytes.Buffer
-	cyan := color.Cyan()
+
 	for i := 0; i < 20; i++ {
-		if i < index {
-			buffer.WriteString(cyan("|"))
-			continue
+		if i < filled {
+			// Gradient from green (low) through yellow to red (high local balance).
+			ratio := float64(i) / 20.0
+			if ratio < 0.5 {
+				buffer.WriteString(gaugeGreenStyle.Render("\u2588"))
+			} else if ratio < 0.75 {
+				buffer.WriteString(gaugeYellowStyle.Render("\u2588"))
+			} else {
+				buffer.WriteString(gaugeRedStyle.Render("\u2588"))
+			}
+		} else {
+			buffer.WriteString(gaugeEmptyStyle.Render("\u2591"))
 		}
-		buffer.WriteString(" ")
 	}
-	return fmt.Sprintf("[%s] %2d%%", buffer.String(), balance*100/capacity)
+	return fmt.Sprintf("%s %2d%%", buffer.String(), balance*100/capacity)
 }
 
 func NewSummary(info *models.Info,
 	channelsBalance *models.ChannelsBalance,
 	walletBalance *models.WalletBalance,
-	channels *models.Channels) *Summary {
+	channels *models.Channels,
+	fwdingHist *models.FwdingHist,
+	received *models.Received) *Summary {
 	return &Summary{
 		info:            info,
 		channelsBalance: channelsBalance,
 		walletBalance:   walletBalance,
 		channels:        channels,
+		fwdingHist:      fwdingHist,
+		received:        received,
 	}
+}
+
+func (s *Summary) SetPulseFrame(frame int) {
+	s.pulseFrame = frame
+}
+
+func (s *Summary) SetSettingsState(loading bool, state SettingsModalState) {
+	s.forwardingHistLoading = loading
+	s.settings = state
+}
+
+func (s *Summary) renderWindowInput() string {
+	value := s.fwdingHist.StartTime
+	if value == "" {
+		value = "all"
+	}
+
+	const width = 8
+	text := value
+	style := windowInputIdleStyle
+	if len(text) > width {
+		text = text[len(text)-width:]
+	}
+	text = fmt.Sprintf("%-*s", width, text)
+
+	return style.Render(text)
+}
+
+func (s *Summary) RenderSettingsModal(maxWidth int) string {
+	if !s.settings.Open {
+		return ""
+	}
+
+	width := min(62, maxWidth-6)
+	if width < 36 {
+		width = max(20, maxWidth)
+	}
+
+	var body strings.Builder
+	body.WriteString(panelTitleStyle.Render("Data Settings"))
+	body.WriteString("\n")
+	body.WriteString("\n")
+	body.WriteString(s.renderSettingRow("Forwarding Window", s.settings.ForwardingWindowInput, "all", s.settings.Cursor == 0))
+	body.WriteString("\n")
+	body.WriteString(s.renderSettingRow("Forwarding Max Events", s.settings.ForwardingMaxEventsInput, "0", s.settings.Cursor == 1))
+	body.WriteString("\n")
+	body.WriteString(s.renderSettingRow("Received Start Date", s.settings.ReceivedStartDateInput, "all", s.settings.Cursor == 2))
+	body.WriteString("\n")
+	body.WriteString(forwardingWindowHintStyle.Render(s.settingsHelpText()))
+	if s.settings.Error != "" {
+		body.WriteString("\n")
+		body.WriteString(windowErrorStyle.Render(s.settings.Error))
+	}
+	body.WriteString("\n")
+	body.WriteString(forwardingWindowHintStyle.Render("Up/Down select  Enter apply  Esc cancel"))
+
+	return forwardingWindowModalStyle.Width(width).Render(body.String())
+}
+
+func (s *Summary) renderSettingRow(label string, value string, emptyLabel string, selected bool) string {
+	labelStyle := panelLabelStyle
+	inputStyle := windowInputIdleStyle
+	if selected {
+		labelStyle = selectedSettingLabelStyle
+		inputStyle = windowInputStyle
+	}
+
+	return fmt.Sprintf("%s %s",
+		labelStyle.Render(fmt.Sprintf("%-22s", label)),
+		s.renderSettingInput(value, emptyLabel, 16, inputStyle),
+	)
+}
+
+func (s *Summary) renderSettingInput(value string, emptyLabel string, width int, style lipgloss.Style) string {
+	text := value
+	if text == "" {
+		text = emptyLabel
+	}
+	if len(text) > width {
+		text = text[len(text)-width:]
+	}
+
+	return style.Render(fmt.Sprintf("%-*s", width, text))
+}
+
+func (s *Summary) settingsHelpText() string {
+	switch s.settings.Cursor {
+	case 0:
+		return "Forwarding window examples: -1h -1d -1w -1M -1y"
+	case 1:
+		return "Forwarding max events: whole number, 0 means all"
+	case 2:
+		return "Received start date: YYYY-MM-DD, blank means all"
+	default:
+		return ""
+	}
+}
+
+func (s *Summary) layoutPanels(width int, channelsPanel string, walletPanel string, accountingPanel string) string {
+	const gap = 1
+
+	panels := equalizePanelHeights(
+		channelsPanel,
+		walletPanel,
+		accountingPanel,
+	)
+	channelsPanel, walletPanel, accountingPanel = panels[0], panels[1], panels[2]
+
+	if width < 72 {
+		return strings.Join([]string{
+			renderSummaryPanel(channelsPanelStyle, channelsPanel, width),
+			renderSummaryPanel(walletPanelStyle, walletPanel, width),
+			renderSummaryPanel(accountingPanelStyle, accountingPanel, width),
+		}, "\n")
+	}
+
+	if width < 110 {
+		return strings.Join([]string{
+			renderSummaryPanel(channelsPanelStyle, channelsPanel, width),
+			renderSummaryPanel(walletPanelStyle, walletPanel, width),
+			renderSummaryPanel(accountingPanelStyle, accountingPanel, width),
+		}, "\n")
+	}
+
+	available := width - gap*2
+	channelsWidth := available / 3
+	walletWidth := available / 3
+	accountingWidth := available - channelsWidth - walletWidth
+
+	return lipgloss.JoinHorizontal(lipgloss.Top,
+		renderSummaryPanel(channelsPanelStyle, channelsPanel, channelsWidth),
+		" ",
+		renderSummaryPanel(walletPanelStyle, walletPanel, walletWidth),
+		" ",
+		renderSummaryPanel(accountingPanelStyle, accountingPanel, accountingWidth),
+	)
+}
+
+func renderSummaryPanel(style lipgloss.Style, content string, width int) string {
+	innerWidth := width - 2
+	if innerWidth < 1 {
+		innerWidth = 1
+	}
+	return style.Width(innerWidth).Render(content)
+}
+
+func alignRight(value string, width int) string {
+	valueWidth := lipgloss.Width(value)
+	if width <= valueWidth {
+		return value
+	}
+	return strings.Repeat(" ", width-valueWidth) + value
+}
+
+func formatSats(p *message.Printer, amt int64) string {
+	return p.Sprintf("%d sats", amt)
+}
+
+func formatMsatAsSats(p *message.Printer, msat uint64) string {
+	whole := msat / 1000
+	frac := msat % 1000
+	return p.Sprintf("%d.%03d sats", whole, frac)
+}
+
+func renderAlignedField(labelText string, value string, labelWidth int, valueWidth int) string {
+	labelCol := panelLabelStyle.Width(labelWidth).Render(labelText)
+	valueCol := alignRight(value, valueWidth)
+	return labelCol + " " + valueCol
+}
+
+func (s *Summary) hottestLinkDisplay(stats models.FwdingHistStats) string {
+	inAlias := s.channelAlias(stats.HottestLinkInChanID, stats.HottestLinkInAlias)
+	outAlias := s.channelAlias(stats.HottestLinkOutChanID, stats.HottestLinkOutAlias)
+	if inAlias == "" && outAlias == "" {
+		return "-"
+	}
+	return inAlias + " -> " + outAlias
+}
+
+func (s *Summary) channelAlias(chanID uint64, fallback string) string {
+	if chanID != 0 {
+		for _, ch := range s.channels.List() {
+			if ch.ID == chanID {
+				alias, _ := ch.ShortAlias()
+				if alias != "" {
+					return alias
+				}
+			}
+		}
+	}
+	if fallback != "" {
+		return fallback
+	}
+	if chanID == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d", chanID)
+}
+
+func equalizePanelHeights(panels ...string) []string {
+	maxLines := 0
+	for _, panel := range panels {
+		lines := strings.Count(panel, "\n") + 1
+		if lines > maxLines {
+			maxLines = lines
+		}
+	}
+
+	result := make([]string, len(panels))
+	for i, panel := range panels {
+		lines := strings.Count(panel, "\n") + 1
+		if lines < maxLines {
+			panel += strings.Repeat("\n", maxLines-lines)
+		}
+		result[i] = panel
+	}
+
+	return result
+}
+
+func summarySpinnerFrame(frame int) string {
+	frames := []string{"|", "/", "-", "\\"}
+	if frame < 0 {
+		frame = 0
+	}
+	return frames[frame%len(frames)]
 }
