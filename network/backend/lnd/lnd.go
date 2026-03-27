@@ -610,6 +610,32 @@ func (l Backend) ListInvoices(ctx context.Context) ([]*models.Invoice, error) {
 	return invoices, nil
 }
 
+func (l Backend) ListPayments(ctx context.Context) ([]*models.Payment, error) {
+	l.logger.Debug("List payments...")
+
+	clt, err := l.Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer clt.Close() //nolint:errcheck
+
+	req := &lnrpc.ListPaymentsRequest{
+		MaxPayments: 0,
+		Reversed:    true,
+	}
+	resp, err := clt.ListPayments(ctx, req)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	payments := make([]*models.Payment, len(resp.Payments))
+	for i := range resp.Payments {
+		payments[i] = paymentProtoToPayment(resp.Payments[i])
+	}
+
+	return payments, nil
+}
+
 func (l Backend) SendPayment(ctx context.Context, payreq *models.PayReq) (*models.Payment, error) {
 	l.logger.Debug("Send payment...",
 		logging.String("destination", payreq.Destination),
