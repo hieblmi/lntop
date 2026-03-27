@@ -19,6 +19,12 @@ type Route struct {
 	// to have at least this many satoshis, otherwise the route will fail
 	// at an intermediate node due to an insufficient amount of fees.
 	Amount int64
+	// FeeMsat is the total route fee in millisatoshis.
+	FeeMsat int64
+	// AmountMsat is the total route amount in millisatoshis.
+	AmountMsat int64
+	// FirstHopAmountMsat is the amount sent over the first hop in millisatoshis.
+	FirstHopAmountMsat int64
 
 	Hops []*Hop
 }
@@ -27,6 +33,8 @@ func (r Route) MarshalLogObject(enc logging.ObjectEncoder) error {
 	enc.AddUint32("time_lock", r.TimeLock)
 	enc.AddInt64("fee", r.Fee)
 	enc.AddInt64("Amount", r.Amount)
+	enc.AddInt64("fee_msat", r.FeeMsat)
+	enc.AddInt64("amount_msat", r.AmountMsat)
 
 	return nil
 }
@@ -39,6 +47,10 @@ type Hop struct {
 	ChanID       uint64
 	ChanCapacity int64
 	Amount       int64
+	AmountMsat   int64
 	Fee          int64
+	FeeMsat      int64
 	Expiry       uint32
+	PubKey       string
+	Alias        string
 }
