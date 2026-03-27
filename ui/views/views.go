@@ -22,6 +22,7 @@ const (
 	ROUTING      = "routing"
 	FWDINGHIST   = "fwdinghist"
 	RECEIVED     = "received"
+	PAYMENTS     = "payments"
 	MENU         = "menu"
 )
 
@@ -34,9 +35,11 @@ type Views struct {
 	Channel      *Channel
 	Transactions *Transactions
 	Transaction  *Transaction
+	Payment      *Payment
 	Routing      *Routing
 	FwdingHist   *FwdingHist
 	Received     *Received
+	Payments     *Payments
 }
 
 func New(cfg config.Views, m *models.Models) *Views {
@@ -48,9 +51,11 @@ func New(cfg config.Views, m *models.Models) *Views {
 		Channel:      NewChannel(m.Channels),
 		Transactions: NewTransactions(cfg.Transactions, m.Transactions),
 		Transaction:  NewTransaction(m.Transactions),
+		Payment:      NewPayment(m.Payments),
 		Routing:      NewRouting(cfg.Routing, m.RoutingLog, m.Channels),
 		FwdingHist:   NewFwdingHist(cfg.FwdingHist, m.FwdingHist, m.Channels),
 		Received:     NewReceived(cfg.Received, m.Received),
+		Payments:     NewPayments(cfg.Payments, m.Payments),
 	}
 }
 

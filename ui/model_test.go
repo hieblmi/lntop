@@ -448,6 +448,90 @@ func TestHandleEventChannelsUpdatedRefreshesSummaryData(t *testing.T) {
 	}
 }
 
+func TestPaymentsEnterOpensDetailWithRoute(t *testing.T) {
+	payments := &uimodels.Payments{}
+	payments.Add(&netmodels.Payment{
+		PaymentHash:    "hash-1",
+		PaymentIndex:   42,
+		Status:         netmodels.PaymentStatusSucceeded,
+		Kind:           netmodels.PaymentKindInvoice,
+		ValueSat:       1200,
+		ValueMsat:      1_200_000,
+		FeeSat:         3,
+		FeeMsat:        3_000,
+		CreationTimeNs: 1_700_000_000_000_000_000,
+		Route: &netmodels.Route{
+			TimeLock:   80,
+			Fee:        3,
+			FeeMsat:    3_000,
+			Amount:     1203,
+			AmountMsat: 1_203_000,
+			Hops: []*netmodels.Hop{{
+				ChanID:     123456789,
+				PubKey:     "02abcdef",
+				Amount:     1200,
+				AmountMsat: 1_200_000,
+				Fee:        3,
+				FeeMsat:    3_000,
+				Expiry:     80,
+			}},
+		},
+		AttemptDetails: []*netmodels.PaymentAttempt{{
+			AttemptID:     1,
+			Status:        netmodels.PaymentAttemptStatusSucceeded,
+			AttemptTimeNs: 1_700_000_000_000_000_000,
+			Route: &netmodels.Route{
+				TimeLock:   80,
+				Fee:        3,
+				FeeMsat:    3_000,
+				Amount:     1203,
+				AmountMsat: 1_203_000,
+				Hops: []*netmodels.Hop{{
+					ChanID:     123456789,
+					PubKey:     "02abcdef",
+					Amount:     1200,
+					AmountMsat: 1_200_000,
+					Fee:        3,
+					FeeMsat:    3_000,
+					Expiry:     80,
+				}},
+			},
+		}},
+	})
+
+	models := &uimodels.Models{
+		Info:            &uimodels.Info{},
+		Channels:        uimodels.NewChannels(),
+		WalletBalance:   &uimodels.WalletBalance{},
+		ChannelsBalance: &uimodels.ChannelsBalance{},
+		Transactions:    &uimodels.Transactions{},
+		RoutingLog:      &uimodels.RoutingLog{},
+		FwdingHist:      &uimodels.FwdingHist{},
+		Received:        &uimodels.Received{},
+		Payments:        payments,
+	}
+
+	m := &model{
+		activeView: views.PAYMENTS,
+		models:     models,
+		views:      views.New(config.Views{}, models),
+	}
+
+	m.onEnter()
+
+	if !m.inDetail {
+		t.Fatalf("expected payments enter to open detail view")
+	}
+	if m.models.Payments.Current() == nil {
+		t.Fatalf("expected current payment to be selected")
+	}
+
+	out := stripANSI(m.views.Payment.Render(120, 30))
+	if !strings.Contains(out, "Route Hops") || !strings.Contains(out, "02abcdef") {
+		t.Fatalf("expected payment detail to include route hop information")
+	}
+}
+
 var ansiTestRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func stripANSI(s string) string {

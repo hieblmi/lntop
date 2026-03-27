@@ -49,6 +49,11 @@ type receivedLoadedMsg struct {
 	err      error
 }
 
+type paymentsLoadedMsg struct {
+	payments []*netmodels.Payment
+	err      error
+}
+
 type currentNodeLoadedMsg struct {
 	pubkey string
 	node   *netmodels.Node

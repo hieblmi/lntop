@@ -40,6 +40,7 @@ type Views struct {
 	Routing      *View `toml:"routing"`
 	FwdingHist   *View `toml:"fwdinghist"`
 	Received     *View `toml:"received"`
+	Payments     *View `toml:"payments"`
 }
 
 type ColumnOptions map[string]map[string]string

@@ -73,3 +73,16 @@ func TestReceivedAllColumnsSortable(t *testing.T) {
 		}
 	}
 }
+
+func TestPaymentsAllColumnsSortable(t *testing.T) {
+	view := NewPayments(&config.View{Columns: []string{
+		"TYPE", "TIME", "STATUS", "AMOUNT", "AMOUNT_MSAT", "FEE", "FEE_MSAT",
+		"ATTEMPTS", "FAILURE", "INDEX", "HASH", "PREIMAGE", "REQUEST",
+	}}, &uimodels.Payments{})
+
+	for i, col := range view.columns {
+		if col.sort == nil {
+			t.Fatalf("payments column %q at index %d is not sortable", col.name, i)
+		}
+	}
+}
