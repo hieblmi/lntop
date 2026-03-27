@@ -137,6 +137,10 @@ func (b *Backend) ListInvoices(ctx context.Context) ([]*models.Invoice, error) {
 	return result, nil
 }
 
+func (b *Backend) ListPayments(ctx context.Context) ([]*models.Payment, error) {
+	return []*models.Payment{}, nil
+}
+
 func New(c *config.Network) *Backend {
 	return &Backend{
 		invoices: make(map[string]models.Invoice),

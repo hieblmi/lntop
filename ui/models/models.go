@@ -24,6 +24,7 @@ type Models struct {
 	RoutingLog      *RoutingLog
 	FwdingHist      *FwdingHist
 	Received        *Received
+	Payments        *Payments
 }
 
 func New(app *app.App) *Models {
@@ -69,6 +70,7 @@ func New(app *app.App) *Models {
 		RoutingLog:      &RoutingLog{},
 		FwdingHist:      &fwdingHist,
 		Received:        rec,
+		Payments:        &Payments{},
 	}
 }
 
@@ -242,6 +244,13 @@ func (m *Models) ApplyReceived(invoices []*models.Invoice) {
 			continue
 		}
 		m.Received.Add(inv)
+	}
+}
+
+func (m *Models) ApplyPayments(payments []*models.Payment) {
+	m.Payments.Reset()
+	for _, payment := range payments {
+		m.Payments.Add(payment)
 	}
 }
 

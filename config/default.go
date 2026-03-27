@@ -115,6 +115,32 @@ columns = [
 	"LAST UPDATE",    # last update
 	"DETAIL",         # error description
 ]
+
+[views.received]
+columns = [
+	"TYPE",    # invoice or keysend
+	"TIME",    # settle time, falling back to creation time
+	"AMOUNT",  # settled amount in satoshis
+	"MEMO",    # invoice memo/description
+	"R_HASH",  # payment hash
+]
+
+[views.payments]
+columns = [
+	"TYPE",      # invoice or keysend
+	"TIME",      # payment creation time
+	"STATUS",    # payment status
+	"AMOUNT",    # amount paid in satoshis
+	"AMOUNT_MSAT", # amount paid in millisatoshis
+	"FEE",       # fee paid in satoshis
+	"FEE_MSAT",  # fee paid in millisatoshis
+	"ATTEMPTS",  # number of HTLC attempts
+	"FAILURE",   # failure reason, if any
+	"INDEX",     # payment index
+	"HASH",      # payment hash
+	"PREIMAGE",  # payment preimage
+	"REQUEST",   # original payment request
+]
 `,
 		cfg.Logger.Type,
 		cfg.Logger.Dest,

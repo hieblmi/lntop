@@ -8,6 +8,7 @@ import (
 
 	"github.com/hieblmi/lntop/logging"
 	"github.com/hieblmi/lntop/network"
+	netmodels "github.com/hieblmi/lntop/network/models"
 	"github.com/hieblmi/lntop/network/options"
 )
 
@@ -78,6 +79,53 @@ func loadReceivedCmd(net *network.Network) tea.Cmd {
 		defer cancel()
 		invoices, err := net.ListInvoices(ctx)
 		return receivedLoadedMsg{invoices: invoices, err: err}
+	}
+}
+
+func loadPaymentsCmd(net *network.Network, logger logging.Logger) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		payments, err := net.ListPayments(ctx)
+		if err != nil {
+			return paymentsLoadedMsg{err: err}
+		}
+
+		// Resolve node aliases for route hops, caching lookups.
+		aliasCache := make(map[string]string)
+		resolveHops := func(hops []*netmodels.Hop) {
+			for _, hop := range hops {
+				if hop.PubKey == "" {
+					continue
+				}
+				if alias, ok := aliasCache[hop.PubKey]; ok {
+					hop.Alias = alias
+					continue
+				}
+				node, err := net.GetNode(ctx, hop.PubKey, false)
+				if err != nil {
+					logger.Debug("loadPaymentsCmd: cannot resolve hop alias",
+						logging.String("pubkey", hop.PubKey))
+					aliasCache[hop.PubKey] = ""
+				} else {
+					hop.Alias = node.Alias
+					aliasCache[hop.PubKey] = node.Alias
+				}
+			}
+		}
+
+		for _, p := range payments {
+			if p.Route != nil {
+				resolveHops(p.Route.Hops)
+			}
+			for _, a := range p.AttemptDetails {
+				if a.Route != nil {
+					resolveHops(a.Route.Hops)
+				}
+			}
+		}
+
+		return paymentsLoadedMsg{payments: payments}
 	}
 }
 

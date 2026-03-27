@@ -17,6 +17,7 @@ var menuItems = []struct {
 	{"ROUTING", ROUTING},
 	{"FWDINGHISTORY", FWDINGHIST},
 	{"RECEIVED", RECEIVED},
+	{"PAYMENTS", PAYMENTS},
 }
 
 var (

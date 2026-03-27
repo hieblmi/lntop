@@ -1,6 +1,7 @@
 package lnd
 
 import (
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -240,22 +241,216 @@ func payreqProtoToPayReq(h *lnrpc.PayReq, payreq string) *models.PayReq {
 	}
 }
 
+func paymentProtoToPayment(resp *lnrpc.Payment) *models.Payment {
+	if resp == nil {
+		return nil
+	}
+
+	payment := &models.Payment{
+		PaymentHash:     resp.GetPaymentHash(),
+		PaymentPreimage: resp.GetPaymentPreimage(),
+		PaymentRequest:  resp.GetPaymentRequest(),
+		Status:          paymentStatusProto(resp.GetStatus()),
+		FailureReason:   paymentFailureReasonString(resp.GetFailureReason()),
+		CreationDate:    resp.GetCreationDate(),
+		CreationTimeNs:  resp.GetCreationTimeNs(),
+		ValueSat:        resp.GetValueSat(),
+		ValueMsat:       resp.GetValueMsat(),
+		FeeSat:          resp.GetFeeSat(),
+		FeeMsat:         resp.GetFeeMsat(),
+		PaymentIndex:    resp.GetPaymentIndex(),
+		Kind:            paymentKindFromRequest(resp.GetPaymentRequest()),
+	}
+	htlcs := resp.GetHtlcs()
+	payment.Attempts = len(htlcs)
+	payment.AttemptDetails = make([]*models.PaymentAttempt, 0, len(htlcs))
+	hasSuccessfulRoute := false
+
+	for _, htlc := range htlcs {
+		attempt := htlcAttemptProtoToPaymentAttempt(htlc)
+		if attempt == nil {
+			continue
+		}
+		payment.AttemptDetails = append(payment.AttemptDetails, attempt)
+		if attempt.Status == models.PaymentAttemptStatusSucceeded {
+			payment.Route = attempt.Route
+			payment.PaymentPreimage = attempt.PaymentPreimage
+			hasSuccessfulRoute = true
+		} else if !hasSuccessfulRoute && attempt.Route != nil {
+			payment.Route = attempt.Route
+		}
+	}
+
+	if payment.ValueSat == 0 {
+		payment.ValueSat = resp.GetValue()
+	}
+	if payment.FeeSat == 0 {
+		payment.FeeSat = resp.GetFee()
+	}
+
+	return payment
+}
+
+func htlcAttemptProtoToPaymentAttempt(resp *lnrpc.HTLCAttempt) *models.PaymentAttempt {
+	if resp == nil {
+		return nil
+	}
+
+	attempt := &models.PaymentAttempt{
+		AttemptID:       resp.GetAttemptId(),
+		Status:          paymentAttemptStatusProto(resp.GetStatus()),
+		AttemptTimeNs:   resp.GetAttemptTimeNs(),
+		ResolveTimeNs:   resp.GetResolveTimeNs(),
+		PaymentPreimage: hex.EncodeToString(resp.GetPreimage()),
+		Route:           protoToRoute(resp.GetRoute()),
+	}
+
+	if failure := resp.GetFailure(); failure != nil {
+		attempt.FailureCode = paymentFailureCodeString(failure.GetCode())
+		attempt.FailureSourceIndex = failure.GetFailureSourceIndex()
+		attempt.FailureHTLCMsat = failure.GetHtlcMsat()
+		attempt.FailureCLTVExpiry = failure.GetCltvExpiry()
+		attempt.FailureHeight = failure.GetHeight()
+		if update := failure.GetChannelUpdate(); update != nil {
+			attempt.FailureChannelID = update.GetChanId()
+		}
+	}
+
+	return attempt
+}
+
+func paymentAttemptStatusProto(status lnrpc.HTLCAttempt_HTLCStatus) models.PaymentAttemptStatus {
+	switch status {
+	case lnrpc.HTLCAttempt_SUCCEEDED:
+		return models.PaymentAttemptStatusSucceeded
+	case lnrpc.HTLCAttempt_FAILED:
+		return models.PaymentAttemptStatusFailed
+	default:
+		return models.PaymentAttemptStatusInFlight
+	}
+}
+
+func paymentKindFromRequest(paymentRequest string) models.PaymentKind {
+	if paymentRequest == "" {
+		return models.PaymentKindKeysend
+	}
+	return models.PaymentKindInvoice
+}
+
+func paymentStatusProto(status lnrpc.Payment_PaymentStatus) models.PaymentStatus {
+	switch status {
+	case lnrpc.Payment_IN_FLIGHT:
+		return models.PaymentStatusInFlight
+	case lnrpc.Payment_SUCCEEDED:
+		return models.PaymentStatusSucceeded
+	case lnrpc.Payment_FAILED:
+		return models.PaymentStatusFailed
+	case lnrpc.Payment_INITIATED:
+		return models.PaymentStatusInitiated
+	default:
+		return models.PaymentStatusUnknown
+	}
+}
+
+func paymentFailureReasonString(reason lnrpc.PaymentFailureReason) string {
+	switch reason {
+	case lnrpc.PaymentFailureReason_FAILURE_REASON_NONE:
+		return ""
+	default:
+		return strings.ToLower(strings.ReplaceAll(strings.TrimPrefix(reason.String(), "FAILURE_REASON_"), "_", "-"))
+	}
+}
+
+func paymentFailureCodeString(code lnrpc.Failure_FailureCode) string {
+	if code == lnrpc.Failure_RESERVED {
+		return ""
+	}
+	return strings.ToLower(strings.ReplaceAll(code.String(), "_", "-"))
+}
+
+func protoToRoute(resp *lnrpc.Route) *models.Route {
+	if resp == nil {
+		return nil
+	}
+
+	hops := resp.GetHops()
+	convertedHops := make([]*models.Hop, 0, len(hops))
+	for _, hop := range hops {
+		convertedHops = append(convertedHops, protoToHop(hop))
+	}
+
+	route := &models.Route{
+		TimeLock:           resp.GetTotalTimeLock(),
+		Fee:                resp.GetTotalFees(), //nolint:staticcheck // deprecated proto field
+		Amount:             resp.GetTotalAmt(),  //nolint:staticcheck // deprecated proto field
+		FeeMsat:            resp.GetTotalFeesMsat(),
+		AmountMsat:         resp.GetTotalAmtMsat(),
+		FirstHopAmountMsat: resp.GetFirstHopAmountMsat(),
+		Hops:               convertedHops,
+	}
+
+	if route.Amount == 0 && route.AmountMsat != 0 {
+		route.Amount = route.AmountMsat / 1000
+	}
+	if route.Fee == 0 && route.FeeMsat != 0 {
+		route.Fee = route.FeeMsat / 1000
+	}
+
+	return route
+}
+
+func protoToHop(resp *lnrpc.Hop) *models.Hop {
+	if resp == nil {
+		return nil
+	}
+
+	hop := &models.Hop{
+		ChanID:       resp.GetChanId(),
+		ChanCapacity: resp.GetChanCapacity(), //nolint:staticcheck // deprecated proto field
+		Amount:       resp.GetAmtToForward(), //nolint:staticcheck // deprecated proto field
+		AmountMsat:   resp.GetAmtToForwardMsat(),
+		Fee:          resp.GetFee(), //nolint:staticcheck // deprecated proto field
+		FeeMsat:      resp.GetFeeMsat(),
+		Expiry:       resp.GetExpiry(),
+		PubKey:       resp.GetPubKey(),
+	}
+
+	if hop.Amount == 0 && hop.AmountMsat != 0 {
+		hop.Amount = hop.AmountMsat / 1000
+	}
+	if hop.Fee == 0 && hop.FeeMsat != 0 {
+		hop.Fee = hop.FeeMsat / 1000
+	}
+
+	return hop
+}
+
 func sendPaymentProtoToPayment(payreq *models.PayReq, resp *lnrpc.SendResponse) *models.Payment {
 	if payreq == nil || resp == nil {
 		return nil
 	}
 
 	payment := &models.Payment{
+		PaymentHash:     payreq.PaymentHash,
 		PaymentError:    resp.PaymentError,
-		PaymentPreimage: resp.PaymentPreimage,
+		PaymentPreimage: hex.EncodeToString(resp.PaymentPreimage),
+		PaymentRequest:  payreq.String,
+		Status:          models.PaymentStatusSucceeded,
+		ValueSat:        payreq.Amount,
+		Kind:            paymentKindFromRequest(payreq.String),
 		PayReq:          payreq,
 	}
 
+	if resp.PaymentError != "" {
+		payment.Status = models.PaymentStatusFailed
+		payment.FailureReason = resp.PaymentError
+	}
+
 	if resp.PaymentRoute != nil {
-		payment.Route = &models.Route{
-			TimeLock: resp.PaymentRoute.GetTotalTimeLock(),
-			Fee:      resp.PaymentRoute.GetTotalFees(), //nolint:staticcheck // deprecated proto field
-			Amount:   resp.PaymentRoute.GetTotalAmt(),  //nolint:staticcheck // deprecated proto field
+		payment.Route = protoToRoute(resp.PaymentRoute)
+		payment.FeeSat = payment.Route.Fee
+		if payment.Route.Amount > 0 {
+			payment.ValueSat = payment.Route.Amount - payment.Route.Fee
 		}
 	}
 

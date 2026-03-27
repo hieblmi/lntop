@@ -48,6 +48,7 @@ type model struct {
 	settingsErr              string
 	channelsLoading          bool
 	receivedLoading          bool
+	paymentsLoading          bool
 	currentNodeLoading       bool
 
 	startupActive    bool
@@ -66,6 +67,7 @@ var startupTaskLabels = []struct {
 	{"transactions", "Transactions"},
 	{"forwarding", "Forwarding history"},
 	{"received", "Received invoices"},
+	{"payments", "Payments"},
 	{"channels", "Channels"},
 }
 
@@ -102,6 +104,7 @@ func (m *model) Init() tea.Cmd {
 		m.loadTransactionsCmd(),
 		m.loadForwardingHistoryCmd(),
 		m.loadReceivedCmd(),
+		m.loadPaymentsCmd(),
 		m.loadChannelsCmd(),
 	)
 }
@@ -132,6 +135,7 @@ func (m *model) loadInitialData(ctx context.Context) {
 		m.models.RefreshTransactions,
 		m.models.RefreshForwardingHistory,
 		m.models.RefreshReceivedFromNetwork,
+		m.models.RefreshPaymentsFromNetwork,
 		m.models.RefreshChannels,
 	}
 	for _, fn := range fns {
@@ -264,6 +268,17 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.finishStartupTask("received")
 		return m, m.completeStartupCmdIfReady()
 
+	case paymentsLoadedMsg:
+		m.paymentsLoading = false
+		if msg.err != nil {
+			m.startupWaiting = "Retrying Payments"
+			m.logger.Error("refresh payments failed", logging.Error(msg.err))
+			return m, startupRetryCmd("payments")
+		}
+		m.models.ApplyPayments(msg.payments)
+		m.finishStartupTask("payments")
+		return m, m.completeStartupCmdIfReady()
+
 	case currentNodeLoadedMsg:
 		m.currentNodeLoading = false
 		if msg.err != nil {
@@ -300,9 +315,9 @@ func (m *model) handleEvent(e *events.Event) tea.Cmd {
 	case events.WalletBalanceUpdated:
 		cmds = append(cmds, m.loadInfoCmd(), m.loadWalletBalanceCmd(), m.loadTransactionsCmd())
 	case events.ChannelBalanceUpdated:
-		cmds = append(cmds, m.loadInfoCmd(), m.loadChannelsBalanceCmd(), m.loadChannelsCmd(), m.loadForwardingHistoryCmd())
+		cmds = append(cmds, m.loadInfoCmd(), m.loadChannelsBalanceCmd(), m.loadChannelsCmd(), m.loadForwardingHistoryCmd(), m.loadPaymentsCmd())
 	case events.ChannelPending, events.ChannelActive, events.ChannelInactive:
-		cmds = append(cmds, m.loadInfoCmd(), m.loadChannelsBalanceCmd(), m.loadChannelsCmd(), m.loadForwardingHistoryCmd())
+		cmds = append(cmds, m.loadInfoCmd(), m.loadChannelsBalanceCmd(), m.loadChannelsCmd(), m.loadForwardingHistoryCmd(), m.loadPaymentsCmd())
 	case events.ChannelsUpdated:
 		channels, ok := e.Data.([]*netmodels.Channel)
 		if !ok {
@@ -488,6 +503,8 @@ func (m *model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.views.Channel.ScrollUp()
 		case views.TRANSACTIONS:
 			m.views.Transaction.ScrollUp()
+		case views.PAYMENTS:
+			m.views.Payment.ScrollUp()
 		}
 	case "down", "j":
 		switch m.activeView {
@@ -495,10 +512,15 @@ func (m *model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.views.Channel.ScrollDown()
 		case views.TRANSACTIONS:
 			m.views.Transaction.ScrollDown()
+		case views.PAYMENTS:
+			m.views.Payment.ScrollDown()
 		}
 	case "home", "g":
 		if m.activeView == views.CHANNELS {
 			m.views.Channel.ScrollHome()
+		}
+		if m.activeView == views.PAYMENTS {
+			m.views.Payment.ScrollHome()
 		}
 	case "c":
 		if m.activeView == views.CHANNELS {
@@ -567,6 +589,8 @@ func (m *model) cursorDown() {
 		m.views.FwdingHist.CursorDown()
 	case views.RECEIVED:
 		m.views.Received.CursorDown()
+	case views.PAYMENTS:
+		m.views.Payments.CursorDown()
 	}
 }
 
@@ -582,6 +606,8 @@ func (m *model) cursorUp() {
 		m.views.FwdingHist.CursorUp()
 	case views.RECEIVED:
 		m.views.Received.CursorUp()
+	case views.PAYMENTS:
+		m.views.Payments.CursorUp()
 	}
 }
 
@@ -597,6 +623,8 @@ func (m *model) columnLeft() {
 		m.views.FwdingHist.ColumnLeft()
 	case views.RECEIVED:
 		m.views.Received.ColumnLeft()
+	case views.PAYMENTS:
+		m.views.Payments.ColumnLeft()
 	}
 }
 
@@ -612,6 +640,8 @@ func (m *model) columnRight() {
 		m.views.FwdingHist.ColumnRight()
 	case views.RECEIVED:
 		m.views.Received.ColumnRight()
+	case views.PAYMENTS:
+		m.views.Payments.ColumnRight()
 	}
 }
 
@@ -627,6 +657,8 @@ func (m *model) home() {
 		m.views.FwdingHist.Home()
 	case views.RECEIVED:
 		m.views.Received.Home()
+	case views.PAYMENTS:
+		m.views.Payments.Home()
 	}
 }
 
@@ -642,6 +674,8 @@ func (m *model) end() {
 		m.views.FwdingHist.End()
 	case views.RECEIVED:
 		m.views.Received.End()
+	case views.PAYMENTS:
+		m.views.Payments.End()
 	}
 }
 
@@ -657,6 +691,8 @@ func (m *model) pageDown(ps int) {
 		m.views.FwdingHist.PageDown(ps)
 	case views.RECEIVED:
 		m.views.Received.PageDown(ps)
+	case views.PAYMENTS:
+		m.views.Payments.PageDown(ps)
 	}
 }
 
@@ -672,6 +708,8 @@ func (m *model) pageUp(ps int) {
 		m.views.FwdingHist.PageUp(ps)
 	case views.RECEIVED:
 		m.views.Received.PageUp(ps)
+	case views.PAYMENTS:
+		m.views.Payments.PageUp(ps)
 	}
 }
 
@@ -687,6 +725,8 @@ func (m *model) sort(order models.Order) {
 		m.views.FwdingHist.Sort("", order)
 	case views.RECEIVED:
 		m.views.Received.Sort("", order)
+	case views.PAYMENTS:
+		m.views.Payments.Sort("", order)
 	}
 }
 
@@ -701,6 +741,10 @@ func (m *model) onEnter() {
 		idx := m.views.Transactions.Index()
 		m.models.Transactions.SetCurrent(idx)
 		m.views.Transaction.Offset = 0
+		m.inDetail = true
+	case views.PAYMENTS:
+		m.models.Payments.SetCurrent(m.views.Payments.Cursor)
+		m.views.Payment.Offset = 0
 		m.inDetail = true
 	}
 }
@@ -765,6 +809,8 @@ func (m *model) View() string {
 			mainContent = m.views.Channel.Render(renderW, mainH)
 		case views.TRANSACTIONS:
 			mainContent = m.views.Transaction.Render(renderW, mainH)
+		case views.PAYMENTS:
+			mainContent = m.views.Payment.Render(renderW, mainH)
 		default:
 			mainContent = m.renderActiveTable(renderW, mainH)
 		}
@@ -881,6 +927,14 @@ func (m *model) loadReceivedCmd() tea.Cmd {
 	return loadReceivedCmd(m.app.Network)
 }
 
+func (m *model) loadPaymentsCmd() tea.Cmd {
+	if m.paymentsLoading {
+		return nil
+	}
+	m.paymentsLoading = true
+	return loadPaymentsCmd(m.app.Network, m.logger)
+}
+
 func (m *model) loadChannelsCmd() tea.Cmd {
 	if m.channelsLoading {
 		return nil
@@ -955,7 +1009,8 @@ func (m *model) hasStartupLoadsInFlight() bool {
 		m.transactionsLoading ||
 		m.forwardingHistLoading ||
 		m.channelsLoading ||
-		m.receivedLoading
+		m.receivedLoading ||
+		m.paymentsLoading
 }
 
 func (m *model) completeStartupCmdIfReady() tea.Cmd {
@@ -979,6 +1034,8 @@ func (m *model) startupRetryTaskCmd(task string) tea.Cmd {
 		return m.loadForwardingHistoryCmd()
 	case "received":
 		return m.loadReceivedCmd()
+	case "payments":
+		return m.loadPaymentsCmd()
 	case "channels":
 		return m.loadChannelsCmd()
 	default:
@@ -1107,6 +1164,8 @@ func (m *model) renderTable(viewName string, width, height int) string {
 		return m.views.FwdingHist.Render(width, height)
 	case views.RECEIVED:
 		return m.views.Received.Render(width, height)
+	case views.PAYMENTS:
+		return m.views.Payments.Render(width, height)
 	}
 	return ""
 }
