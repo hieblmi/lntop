@@ -4,178 +4,385 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/hieblmi/lntop)](https://goreportcard.com/report/github.com/hieblmi/lntop)
 [![Godoc](https://godoc.org/github.com/hieblmi/lntop?status.svg)](https://godoc.org/github.com/hieblmi/lntop)
 
-`lntop` is an interactive text-mode channels viewer for Unix systems.
+`lntop` is an interactive terminal dashboard for Lightning Network nodes
+running [LND](https://github.com/lightningnetwork/lnd). It gives you a
+live, keyboard-driven view of channels, balances, routing activity,
+forwarding history, on-chain transactions, received invoices, and outgoing
+payments.
 
- <img src="lntop-v0.1.0.png">
- *lntop-v0.1.0*
+The UI is built with [Bubble Tea](https://github.com/charmbracelet/bubbletea)
+and [Lip Gloss](https://github.com/charmbracelet/lipgloss).
+
+## Preview
+
+The Bubble Tea UI preview from
+[PR #91](https://github.com/hieblmi/lntop/pull/91#issue-4033441681):
+
+<video src="https://github.com/user-attachments/assets/937bdd3f-b8cc-42e8-8e42-e3bbff897707" controls width="100%"></video>
+
+[Open the preview video](https://github.com/user-attachments/assets/937bdd3f-b8cc-42e8-8e42-e3bbff897707)
+
+## Features
+
+- Full-screen terminal UI with a header, summary panels, menu, tables, detail
+  screens, and a startup progress view.
+- LND node summary: alias, LND version, chain/network, sync state, block
+  height, and peer count.
+- Channel summary: channel balance, pending balance, active/pending/inactive
+  counts, disabled local/remote policy counts, and local-liquidity gauge.
+- Wallet summary: total, confirmed, unconfirmed, locked, and reserved anchor
+  channel balances.
+- Accounting summary based on the currently configured forwarding-history
+  window: profit, total forwarded, largest/smallest forward, most profitable
+  forward, and hottest forwarding link.
+- Channels table with configurable columns, sortable columns, horizontal
+  column navigation, pending-channel support, channel detail view, policy
+  details, disabled-policy detection, channel-age display, and optional
+  local alias overrides.
+- Live activity highlights in the channels table for pending HTLCs, unsettled
+  balances, sent traffic, and received traffic.
+- Transactions table with transaction detail view.
+- Routing table fed from LND router HTLC events.
+- Forwarding history table with configurable time window and maximum event
+  count.
+- Received table for settled invoices and keysend receives, with optional
+  start-date filtering.
+- Payments table for outgoing payments, including status, fees, failures,
+  route summaries, route hops, and HTLC attempt details.
+- Event-driven refreshes from LND subscriptions plus a 3-second polling ticker
+  for aggregate balances and per-channel state changes.
+- Runtime settings modal for forwarding history and received-invoice filters.
+- Docker packaging scripts in [`docker/`](docker/README.md).
 
 ## Install
 
-Require the [go programming language](https://golang.org/) (version >= 1.19.1)
+This branch's `go.mod` declares Go `1.25.5`. Use a Go toolchain compatible
+with that version.
 
-**Raspberry Pi users: be aware that Raspbian ships with Go 1.11** ( see
-[#30](https://github.com/hieblmi/lntop/issues/30) )
+Raspberry Pi users: be aware that Raspbian often ships an old Go toolchain
+(for example Go 1.11 in the original report). Install a modern Go release
+manually if the distro package is too old. See
+[#30](https://github.com/hieblmi/lntop/issues/30).
 
-```
+Build from source:
+
+```sh
 git clone https://github.com/hieblmi/lntop.git
 cd lntop
-go build   // creates a binary `lntop` in directory
-go install // creates a binary and move it in your $GOBIN path
-
+go build -o lntop .
+go install .
 ```
 
-With Go version >= 1.16, you can use [`go-install`](https://golang.org/ref/mod#go-install)
+With Go modules, you can install the latest published version directly:
 
-```
+```sh
 go install github.com/hieblmi/lntop@latest
 ```
 
-Note: If you are using [**Umbrel**](https://getumbrel.com) or [**Citadel**](https://runcitadel.space) you can simply install the [**Lightning Shell**](https://lightningshell.app) app from the respective dashboard. This will give you `lntop` which should just work without any additional configuration.
+Umbrel and Citadel users can install the
+[Lightning Shell](https://lightningshell.app) app from the dashboard. It
+includes `lntop` and should work without extra configuration.
 
-## Config
+Docker users can run `lntop` from a container. See
+[`docker/README.md`](docker/README.md).
 
-First time `lntop` is started, a config file `.lntop/config.toml` is created in the user's home directory. Change `address`, `cert` path and `macaroon` path according to your setup.
+## Quick Start
 
-The following environment variables, if present, will be used in the initial config file instead of the defaults, so you won't have to have `lntop` fail on the first start and then manually edit the config file: `LND_ADDRESS`, `CERT_PATH`, `MACAROON_PATH`.
+Run `lntop` once:
+
+```sh
+lntop
+```
+
+On the first start, `lntop` creates `~/.lntop/config.toml` and
+`~/.lntop/lntop.log`. Edit the config so it points at your LND gRPC address,
+TLS certificate, and macaroon:
+
+```toml
+[network]
+address = "127.0.0.1:10009"
+cert = "/home/user/.lnd/tls.cert"
+macaroon = "/home/user/.lnd/data/chain/bitcoin/mainnet/readonly.macaroon"
+```
+
+Then start it again:
+
+```sh
+lntop
+```
+
+Use a custom config file with:
+
+```sh
+lntop --config /path/to/config.toml
+lntop -c /path/to/config.toml
+```
+
+Print the version:
+
+```sh
+lntop --version
+```
+
+Run only the event subscriber loop:
+
+```sh
+lntop pubsub
+```
+
+## Initial Config Environment Variables
+
+These environment variables are only used when the initial config file is
+created. They do not override an existing `~/.lntop/config.toml`.
+
+| Variable | Config field |
+| --- | --- |
+| `LND_ADDRESS` | `network.address` |
+| `CERT_PATH` | `network.cert` |
+| `MACAROON_PATH` | `network.macaroon` |
+
+Example:
+
+```sh
+LND_ADDRESS=127.0.0.1:10009 \
+CERT_PATH=$HOME/.lnd/tls.cert \
+MACAROON_PATH=$HOME/.lnd/data/chain/bitcoin/mainnet/readonly.macaroon \
+lntop
+```
+
+## Controls
+
+| Key | Action |
+| --- | --- |
+| `F2`, `m` | Open or close the view menu |
+| `Up`, `Down`, `k`, `j` | Move between rows or menu items |
+| `Left`, `Right`, `h`, `l` | Move between table columns |
+| `Home`, `g` | Jump to the first row |
+| `End`, `G` | Jump to the last row |
+| `PageUp`, `PageDown` | Move by one page |
+| `a` | Sort the active column ascending |
+| `d` | Sort the active column descending |
+| `Enter` | Open/close details for channels, transactions, and payments |
+| `c` | On channels, load disabled-channel counts for the selected peer |
+| `F9` | Open runtime data settings |
+| `/`, `w` | Open runtime settings from the forwarding-history view |
+| `Esc` | Cancel the runtime settings modal |
+| `F10`, `q`, `Ctrl-C` | Quit |
+
+Runtime settings are applied to the current session only. Persist them in
+`config.toml` if you want them to survive restarts.
+
+## Views
+
+### Channels
+
+The channels view is the default view. It lists open and pending channels and
+can show status, peer alias, local/remote balance, capacity, total sent and
+received, pending HTLC count, unsettled amount, commit fee, last update,
+approximate age, privacy, channel id, channel point, short channel id, update
+count, outgoing fees, incoming fees, and LND inbound fees.
+
+Press `Enter` on a channel to open details. The detail view shows channel
+state, capacity and balances, channel point, peer pubkey, peer alias, peer
+capacity and channel count, outgoing and incoming policies, disabled-policy
+state, and pending HTLCs. Press `c` to fetch disabled-channel counts for the
+selected peer.
+
+Configure it with `[views.channels]`:
+
+```toml
+[views.channels]
+columns = [
+  "STATUS", "ALIAS", "GAUGE", "LOCAL", "REMOTE", "CAP",
+  "SENT", "RECEIVED", "HTLC", "UNSETTLED", "CFEE",
+  "LAST UPDATE", "AGE", "PRIVATE", "ID", "CHANNEL_POINT",
+]
+
+[views.channels.options]
+AGE = { color = "color" }
+```
+
+`AGE.color = "color"` enables colored channel-age output in terminals with
+256-color support.
+
+### Transactions
+
+The transactions view lists on-chain wallet transactions. Press `Enter` to
+open details including date, amount, fee, block height, confirmations, block
+hash, transaction hash, and destination addresses.
+
+Configure it with `[views.transactions]`:
+
+```toml
+[views.transactions]
+columns = ["DATE", "HEIGHT", "CONFIR", "AMOUNT", "FEE", "ADDRESSES"]
+```
+
+### Routing
+
+The routing view displays live HTLC routing events from LND. Events can be:
+
+- `active`: HTLC pending
+- `settled`: preimage revealed and HTLC removed
+- `failed`: payment failed at a downstream node
+- `linkfail`: payment failed at this node
+
+Routing events are not persisted by LND for this view. The view starts empty
+when `lntop` starts and the in-memory routing log is lost when you exit.
+
+Configure it with `[views.routing]`:
+
+```toml
+[views.routing]
+columns = [
+  "DIR", "STATUS", "IN_CHANNEL", "IN_ALIAS",
+  "OUT_CHANNEL", "OUT_ALIAS", "AMOUNT", "FEE",
+  "LAST UPDATE", "DETAIL",
+]
+```
+
+### Forwarding History
+
+The forwarding-history view displays historical forwarding events from LND's
+`ForwardingHistory` RPC. The summary accounting panel uses the same filtered
+event set, so changing the forwarding window changes both the table and the
+summary.
+
+Configure it with `[views.fwdinghist]`:
+
+```toml
+[views.fwdinghist]
+columns = ["ALIAS_IN", "ALIAS_OUT", "AMT_IN", "AMT_OUT", "FEE", "TIMESTAMP_NS"]
+
+[views.fwdinghist.options]
+START_TIME = { start_time = "-12h" }
+MAX_NUM_EVENTS = { max_num_events = "333" }
+```
+
+`START_TIME` accepts a Unix timestamp, an empty value for all history, or a
+negative range ending in `s`, `m`, `h`, `d`, `w`, `M`, or `y`, for example
+`-30m`, `-12h`, `-7d`, or `-1M`.
+
+`MAX_NUM_EVENTS` limits how many events LND returns. `0` means all events.
+Higher values can noticeably increase loading time because `lntop` enriches
+forwarding events with peer aliases.
+
+### Received
+
+The received view lists settled invoices and keysend receives. It shows the
+receive type, settle/creation time, amount, memo, and payment hash.
+
+Configure it with `[views.received]`:
+
+```toml
+[views.received]
+columns = ["TYPE", "TIME", "AMOUNT", "MEMO", "R_HASH"]
+
+[views.received.options]
+START_DATE = { start_date = "2025-09-01" }
+```
+
+`START_DATE` is optional. When set, it must be `YYYY-MM-DD` in local time.
+Invoices settled before that local date are hidden. Leave it blank or omit it
+to show all settled invoices.
+
+### Payments
+
+The payments view lists outgoing payments. It supports payment type, creation
+time, status, amount, fee, HTLC attempts, failure reason, index, payment hash,
+preimage, and payment request. Press `Enter` to open payment details,
+including decoded invoice metadata, route summary, route hops, and attempt
+failure details.
+
+Configure it with `[views.payments]`:
+
+```toml
+[views.payments]
+columns = [
+  "TYPE", "TIME", "STATUS", "AMOUNT", "AMOUNT_MSAT",
+  "FEE", "FEE_MSAT", "ATTEMPTS", "FAILURE",
+  "INDEX", "HASH", "PREIMAGE", "REQUEST",
+]
+```
+
+## Configuration Reference
+
+`lntop` uses TOML. If `--config` is not supplied, it reads
+`~/.lntop/config.toml`.
+
+### Logger
 
 ```toml
 [logger]
 type = "production"
-dest = "/root/.lntop/lntop.log"
+dest = "/home/user/.lntop/lntop.log"
+```
 
+| Field | Description |
+| --- | --- |
+| `type` | `production` or `development`; unknown values fall back to development logging |
+| `dest` | Log output path |
+
+### Network
+
+```toml
 [network]
 name = "lnd"
 type = "lnd"
-address = "//127.0.0.1:10009"
-cert = "/root/.lnd/tls.cert"
-macaroon = "/root/.lnd/data/chain/bitcoin/mainnet/readonly.macaroon"
+address = "127.0.0.1:10009"
+cert = "/home/user/.lnd/tls.cert"
+macaroon = "/home/user/.lnd/data/chain/bitcoin/mainnet/readonly.macaroon"
 macaroon_timeout = 60
+macaroon_ip = ""
 max_msg_recv_size = 52428800
 conn_timeout = 1000000
-pool_capacity = 4
-
-[network.aliases]
-# Not all peers have aliases set up. In order to remember who is whom, pubkeys can be annotated.
-# "Forced" aliases will be printed in a different color to be distinguished from network advertised aliases.
-035e4ff418fc8b5554c5d9eea66396c227bd429a3251c8cbc711002ba215bfc226 = "Wallet of Satoshi"
-03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f = "-=[ACINQ]=-"
-
-[views]
-# views.channels is the view displaying channel list.
-[views.channels]
-# It is possible to add, remove and order columns of the
-# table with the array columns. The available values are:
-columns = [
-	"STATUS",      # status of the channel
-	"ALIAS",       # alias of the channel node
-	"GAUGE",       # ascii bar with percent local/capacity
-	"LOCAL",       # the local amount of the channel
-	"REMOTE",    # the remote amount of the channel
-	#"BASE_OUT"    # the outgoing base fee of the channel
-	#"RATE_OUT"    # the outgoing fee rate in ppm of the channel
-	#"BASE_IN"    # the incoming base fee of the channel
-	#"RATE_IN"    # the incoming fee rate in ppm of the channel
-	"CAP",         # the total capacity of the channel
-	"SENT",        # the total amount sent
-	"RECEIVED",    # the total amount received
-	"HTLC",        # the number of pending HTLC
-	"UNSETTLED",   # the amount unsettled in the channel
-	"CFEE",        # the commit fee
-	"LAST UPDATE", # last update of the channel
-	# "AGE",       # approximate channel age
-	"PRIVATE",     # true if channel is private
-	"ID",          # the id of the channel
-	"CHANNEL_POINT", # the funding outpoint txid:vout on-chain
-	# "SCID",      # short channel id (BxTxO formatted)
-	# "NUPD",      # number of channel updates
-]
-
-[views.channels.options]
-# Currently only one option for the AGE column. If enabled, uses multiple colors
-# from green to orange to indicate the channel age using 256 color scheme in
-# supported terminals
-
-# AGE = { color = "color" }
-
-[views.transactions]
-# It is possible to add, remove and order columns of the
-# table with the array columns. The available values are:
-columns = [
-	"DATE",      # date of the transaction
-	"HEIGHT",    # block height of the transaction
-	"CONFIR",    # number of confirmations
-	"AMOUNT",    # amount moved by the transaction
-	"FEE",       # fee of the transaction
-	"ADDRESSES", # number of transaction output addresses
-]
-
-[views.routing]
-columns = [
-	"DIR",            # event type:  send, receive, forward
-	"STATUS",         # one of: active, settled, failed, linkfail
-	"IN_CHANNEL",     # channel id of the incomming channel
-	"IN_ALIAS",       # incoming channel node alias
-	# "IN_SCID",      # incoming short channel id (BxTxO)
-	# "IN_HTLC",      # htlc id on incoming channel
-	# "IN_TIMELOCK",  # incoming timelock height
-	"OUT_CHANNEL",    # channel id of the outgoing channel
-	"OUT_ALIAS",      # outgoing channel node alias
-	# "OUT_SCID",     # outgoing short channel id (BxTxO)
-	# "OUT_HTLC",     # htlc id on outgoing channel
-	# "OUT_TIMELOCK", # outgoing timelock height
-	"AMOUNT",         # routed amount
-	"FEE",            # routing fee
-	"LAST UPDATE",    # last update
-	"DETAIL",         # error description
-]
-
-[views.fwdinghist]
-columns = [
-         "ALIAS_IN",	# peer alias name of the incoming peer
-         "ALIAS_OUT",   # peer alias name of the outgoing peer
-         "AMT_IN",	# amount of sats received
-         "AMT_OUT",     # amount of sats forwarded
-         "FEE",      	# earned fee
-         "TIMESTAMP_NS",# forwarding event timestamp
-#        "CHAN_ID_IN",  # channel id of the incomming channel
-#        "CHAN_ID_OUT", # channel id of the outgoing channel
-]
-
-[views.fwdinghist.options]
-START_TIME = { start_time = "-6h" }
-MAX_NUM_EVENTS = { max_num_events = "333" }
-
-[views.received]
-# Customize the Received tab columns and options
-# Available columns: TYPE, TIME, AMOUNT, MEMO, R_HASH
-columns = [
-    "TYPE",
-    "TIME",
-    "AMOUNT",
-    "MEMO",
-    "R_HASH",
-]
-
-[views.received.options]
-# Filter displayed received invoices by a start date (inclusive).
-# Format is YYYY-MM-DD in local time. Invoices before this date are hidden.
-# Example: show only invoices from September 1, 2025 and later.
-START_DATE = { start_date = "2025-09-01" }
+pool_capacity = 6
 ```
 
-## Routing view
+| Field | Description |
+| --- | --- |
+| `name` | Human label for the backend |
+| `type` | `lnd` for real LND, `mock` for development/testing |
+| `address` | LND gRPC address in `host:port` format. Legacy `//host:port` values are accepted |
+| `cert` | Path to LND `tls.cert`; if empty, TLS is still used without loading a cert file |
+| `macaroon` | Path to the macaroon. The generated config uses `readonly.macaroon` |
+| `macaroon_timeout` | Timeout constraint added to the macaroon, in seconds |
+| `macaroon_ip` | Optional IP-lock constraint for the macaroon |
+| `max_msg_recv_size` | Maximum gRPC receive message size, in bytes |
+| `conn_timeout` | gRPC connection-pool reuse timeout as a Go duration value in nanoseconds |
+| `pool_capacity` | gRPC connection-pool size. The LND backend enforces a minimum of 6 |
 
-Routing view displays screenful of latest routing events. This information
-is not persisted in LND so the view always starts empty and is lost once
-you exit `lntop`.
+### Alias Overrides
 
-The events are in one of four states:
+Not all peers publish useful aliases. You can annotate pubkeys yourself:
 
-* `active` - HTLC pending
-* `settled` - preimage revealed, HTLC removed
-* `failed` - payment failed at a downstream node
-* `linkfail` - payment failed at this node
+```toml
+[network.aliases]
+035e4ff418fc8b5554c5d9eea66396c227bd429a3251c8cbc711002ba215bfc226 = "Wallet of Satoshi"
+03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f = "-=[ACINQ]=-"
+```
+
+Forced aliases are displayed in a different color so they can be distinguished
+from aliases advertised by the network.
+
+### View Columns
+
+Each table view has a `columns` array. Add, remove, or reorder columns by
+editing the matching `[views.<name>]` section. Column names are case-sensitive.
+
+| View | Supported columns |
+| --- | --- |
+| `channels` | `STATUS`, `ALIAS`, `GAUGE`, `LOCAL`, `REMOTE`, `CAP`, `SENT`, `RECEIVED`, `HTLC`, `UNSETTLED`, `CFEE`, `LAST UPDATE`, `AGE`, `PRIVATE`, `ID`, `CHANNEL_POINT`, `SCID`, `NUPD`, `BASE_OUT`, `RATE_OUT`, `BASE_IN`, `RATE_IN`, `INBOUND_BASE`, `INBOUND_RATE` |
+| `transactions` | `DATE`, `HEIGHT`, `CONFIR`, `AMOUNT`, `FEE`, `ADDRESSES`, `TXHASH`, `BLOCKHASH` |
+| `routing` | `DIR`, `STATUS`, `IN_CHANNEL`, `IN_ALIAS`, `IN_SCID`, `IN_HTLC`, `IN_TIMELOCK`, `OUT_CHANNEL`, `OUT_ALIAS`, `OUT_SCID`, `OUT_HTLC`, `OUT_TIMELOCK`, `AMOUNT`, `FEE`, `LAST UPDATE`, `DETAIL`, `INBOUND_BASE_IN`, `INBOUND_RATE_IN` |
+| `fwdinghist` | `ALIAS_IN`, `ALIAS_OUT`, `AMT_IN`, `AMT_OUT`, `FEE`, `TIMESTAMP_NS`, `CHAN_ID_IN`, `CHAN_ID_OUT`, `INBOUND_BASE_IN`, `INBOUND_RATE_IN` |
+| `received` | `TYPE`, `TIME`, `AMOUNT`, `MEMO`, `R_HASH` |
+| `payments` | `TYPE`, `TIME`, `STATUS`, `AMOUNT`, `AMOUNT_MSAT`, `FEE`, `FEE_MSAT`, `ATTEMPTS`, `FAILURE`, `INDEX`, `HASH`, `PREIMAGE`, `REQUEST` |
+
+Inbound fee columns require LND versions that expose inbound fee fields
+(LND 0.18 and newer).
 
 ## Docker
 
-If you prefer to run `lntop` from a docker container, `cd docker` and follow [`README`](docker/README.md) there.
+If you prefer to run `lntop` from a Docker container, `cd docker` and follow
+the instructions in [`docker/README.md`](docker/README.md).
