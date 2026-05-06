@@ -15,9 +15,6 @@ and [Lip Gloss](https://github.com/charmbracelet/lipgloss).
 
 ## Preview
 
-The Bubble Tea UI preview from
-[PR #91](https://github.com/hieblmi/lntop/pull/91#issue-4033441681):
-
 <video src="https://github.com/user-attachments/assets/937bdd3f-b8cc-42e8-8e42-e3bbff897707" controls width="100%"></video>
 
 [Open the preview video](https://github.com/user-attachments/assets/937bdd3f-b8cc-42e8-8e42-e3bbff897707)
