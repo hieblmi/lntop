@@ -18,14 +18,21 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
-	network, err := network.New(&cfg.Network, logger)
+	net, err := network.New(&cfg.Network, logger)
 	if err != nil {
 		return nil, err
+	}
+
+	if err := net.EnableLoop(cfg.Loop, logger); err != nil {
+		// A loopd misconfiguration should not block lntop startup —
+		// log and continue with Loop disabled for this session.
+		logger.Info("loop integration disabled due to error",
+			logging.Error(err))
 	}
 
 	return &App{
 		Config:  cfg,
 		Logger:  logger,
-		Network: network,
+		Network: net,
 	}, nil
 }

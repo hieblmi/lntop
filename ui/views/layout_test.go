@@ -220,7 +220,111 @@ func TestSummaryRenderKeepsAppliedWindowWhilePopupEditing(t *testing.T) {
 	}
 }
 
+func TestSummaryRenderIncludesLoopPanelWhenEnabled(t *testing.T) {
+	summary := testSummary()
+	swaps := &uimodels.LoopSwaps{}
+	swaps.ReplaceAll([]*netmodels.LoopSwap{
+		{Type: netmodels.LoopSwapTypeStaticIn, ID: "swap"},
+	})
+	deposits := &uimodels.LoopDeposits{}
+	deposits.ReplaceAll([]*netmodels.LoopDeposit{{Outpoint: "txid:0"}})
+	summary.SetLoopState(true, &uimodels.LoopInfoModel{
+		LoopInfo: &netmodels.LoopInfo{
+			Version:         "0.30.0-beta",
+			Network:         "regtest",
+			AutoloopBudget:  250_000,
+			OutPending:      1,
+			OutSuccess:      2,
+			InPending:       3,
+			InSuccess:       4,
+			StaticAddress:   "bcrt1pstatic",
+			StaticDeposited: 100_000,
+			StaticLoopedIn:  50_000,
+		},
+	}, swaps, deposits)
+
+	out := summary.Render(132)
+
+	for _, want := range []string{"Loop", "autoloop", "OUT", "IN", "StaticAddr", "bcrt1pstatic"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("summary missing %q:\n%s", want, out)
+		}
+	}
+	for i, line := range strings.Split(out, "\n") {
+		if w := lipgloss.Width(line); w > 132 {
+			t.Fatalf("line %d width %d exceeds 132", i+1, w)
+		}
+	}
+}
+
+func TestSummaryRenderKeepsLoopPanelInTopRow(t *testing.T) {
+	summary := testSummary()
+	summary.SetLoopState(true, &uimodels.LoopInfoModel{
+		LoopInfo: &netmodels.LoopInfo{
+			Version: "0.30.0-beta",
+			Network: "regtest",
+		},
+	}, &uimodels.LoopSwaps{}, &uimodels.LoopDeposits{})
+
+	out := summary.Render(180)
+
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.Contains(line, "Channels") {
+			continue
+		}
+		for _, want := range []string{"Wallet", "Accounting", "Loop"} {
+			if !strings.Contains(line, want) {
+				t.Fatalf("summary title row missing %q:\n%s", want, out)
+			}
+		}
+		return
+	}
+	t.Fatalf("summary title row not found:\n%s", out)
+}
+
+func TestSummaryRenderOmitsLoopPanelWhenDisabled(t *testing.T) {
+	summary := testSummary()
+	summary.SetLoopState(false, &uimodels.LoopInfoModel{
+		LoopInfo: &netmodels.LoopInfo{Version: "0.30.0-beta"},
+	}, &uimodels.LoopSwaps{}, &uimodels.LoopDeposits{})
+
+	out := summary.Render(132)
+
+	if strings.Contains(out, "Loop") {
+		t.Fatalf("summary should not include Loop panel when disabled:\n%s", out)
+	}
+}
+
+func TestLoopViewOmitsDaemonHeaderStats(t *testing.T) {
+	view := NewLoop(nil, nil, &uimodels.LoopInfoModel{
+		LoopInfo: &netmodels.LoopInfo{
+			Version:       "0.33.1-beta",
+			Network:       "signet",
+			StaticAddress: "tb1pstatic",
+		},
+	}, &uimodels.LoopSwaps{}, &uimodels.LoopDeposits{})
+
+	out := view.Render(120, 20)
+
+	for _, unwanted := range []string{"autoloop", "StaticAddr", "tb1pstatic"} {
+		if strings.Contains(out, unwanted) {
+			t.Fatalf("loop table view should not include daemon header %q:\n%s", unwanted, out)
+		}
+	}
+}
+
 func TestSummaryRenderFillsWideLayoutWidth(t *testing.T) {
+	summary := testSummary()
+
+	out := summary.Render(180)
+	for i, line := range strings.Split(out, "\n") {
+		if w := lipgloss.Width(line); w != 180 {
+			t.Fatalf("line %d width %d, want 180", i+1, w)
+		}
+	}
+}
+
+func testSummary() *Summary {
 	channels := uimodels.NewChannels()
 	channels.Add(&netmodels.Channel{Capacity: 10_000})
 
@@ -230,7 +334,7 @@ func TestSummaryRenderFillsWideLayoutWidth(t *testing.T) {
 		FeeMsat: 80_000,
 	}})
 
-	summary := NewSummary(
+	return NewSummary(
 		&uimodels.Info{Info: &netmodels.Info{
 			NumActiveChannels:   1,
 			NumPendingChannels:  0,
@@ -251,13 +355,6 @@ func TestSummaryRenderFillsWideLayoutWidth(t *testing.T) {
 		fwdingHist,
 		&uimodels.Received{},
 	)
-
-	out := summary.Render(180)
-	for i, line := range strings.Split(out, "\n") {
-		if w := lipgloss.Width(line); w != 180 {
-			t.Fatalf("line %d width %d, want 180", i+1, w)
-		}
-	}
 }
 
 func TestChannelsRenderSlidesVisibleColumnsWithColumnCursor(t *testing.T) {

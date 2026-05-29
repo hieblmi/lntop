@@ -31,6 +31,11 @@ var (
 				BorderForeground(lipgloss.Color("#0f766e")).
 				Padding(0, 1)
 
+	loopPanelStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#7c2d12")).
+			Padding(0, 1)
+
 	panelTitleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("#a78bfa"))
@@ -86,6 +91,10 @@ type Summary struct {
 	channels              *models.Channels
 	fwdingHist            *models.FwdingHist
 	received              *models.Received
+	loopInfo              *models.LoopInfoModel
+	loopSwaps             *models.LoopSwaps
+	loopDeposits          *models.LoopDeposits
+	loopEnabled           bool
 	forwardingHistLoading bool
 	settings              SettingsModalState
 	pulseFrame            int
@@ -226,7 +235,19 @@ func (s *Summary) Render(width int) string {
 		s.hottestLinkDisplay(stats),
 	))
 
-	return s.layoutPanels(width, left.String(), right.String(), accounting.String())
+	panels := []summaryPanel{
+		{style: channelsPanelStyle, content: left.String()},
+		{style: walletPanelStyle, content: right.String()},
+		{style: accountingPanelStyle, content: accounting.String()},
+	}
+	if s.loopEnabled {
+		panels = append(panels, summaryPanel{
+			style:   loopPanelStyle,
+			content: s.renderLoopPanel(p),
+		})
+	}
+
+	return s.layoutPanels(width, panels...)
 }
 
 // gaugeTotal renders a gradient-colored balance gauge.
@@ -284,6 +305,103 @@ func (s *Summary) SetPulseFrame(frame int) {
 func (s *Summary) SetSettingsState(loading bool, state SettingsModalState) {
 	s.forwardingHistLoading = loading
 	s.settings = state
+}
+
+func (s *Summary) SetLoopState(
+	enabled bool, info *models.LoopInfoModel, swaps *models.LoopSwaps,
+	deposits *models.LoopDeposits,
+) {
+	s.loopEnabled = enabled
+	s.loopInfo = info
+	s.loopSwaps = swaps
+	s.loopDeposits = deposits
+}
+
+func (s *Summary) renderLoopPanel(p *message.Printer) string {
+	label := panelLabelStyle.Render
+	green := color.Green()
+	red := color.Red()
+
+	var b strings.Builder
+	b.WriteString(panelTitleStyle.Render("Loop"))
+	b.WriteString("\n")
+	b.WriteString("\n")
+
+	swaps := 0
+	if s.loopSwaps != nil {
+		swaps = s.loopSwaps.Len()
+	}
+	deposits := 0
+	if s.loopDeposits != nil {
+		deposits = s.loopDeposits.Len()
+	}
+
+	if s.loopInfo == nil || s.loopInfo.LoopInfo == nil {
+		b.WriteString(fmt.Sprintf("%s %s", label("status:"), "loading"))
+		b.WriteString("\n")
+		b.WriteString(p.Sprintf("%s %d  %s %d",
+			label("swaps:"), swaps,
+			label("deposits:"), deposits))
+		return b.String()
+	}
+
+	info := s.loopInfo.LoopInfo
+	autoloop := red("OFF")
+	if info.AutoloopOn {
+		autoloop = green("ON")
+	}
+
+	b.WriteString(strings.Join([]string{
+		displayLoopSummaryValue("v" + info.Version),
+		label("net") + " " + displayLoopSummaryValue(info.Network),
+		label("autoloop") + " " + autoloop,
+		label("budget") + " " + formatSats(p, int64(info.AutoloopBudget)),
+	}, "  "))
+	b.WriteString("\n")
+	b.WriteString(p.Sprintf("%s %d pending / %d ok / %d fail   Σ pend %s   Σ ok %s",
+		label("OUT"),
+		info.OutPending, info.OutSuccess, info.OutFail,
+		formatSats(p, info.OutSumPend),
+		formatSats(p, info.OutSumOk),
+	))
+	b.WriteString("\n")
+	b.WriteString(p.Sprintf("%s  %d pending / %d ok / %d fail   Σ pend %s   Σ ok %s",
+		label("IN "),
+		info.InPending, info.InSuccess, info.InFail,
+		formatSats(p, info.InSumPend),
+		formatSats(p, info.InSumOk),
+	))
+	b.WriteString("\n")
+	b.WriteString(p.Sprintf("%s %d  %s %d",
+		label("swaps:"),
+		swaps,
+		label("deposits:"),
+		deposits,
+	))
+	if info.StaticAddress != "" ||
+		info.StaticDeposited != 0 || info.StaticLoopedIn != 0 {
+		b.WriteString("\n")
+		b.WriteString(label("StaticAddr"))
+		if info.StaticAddress != "" {
+			b.WriteString("\n")
+			b.WriteString(info.StaticAddress)
+		}
+		b.WriteString("\n")
+		b.WriteString(fmt.Sprintf("%s %s   %s %s",
+			label("deposited"),
+			formatSats(p, info.StaticDeposited),
+			label("looped-in"),
+			formatSats(p, info.StaticLoopedIn)))
+	}
+
+	return b.String()
+}
+
+func displayLoopSummaryValue(value string) string {
+	if value == "" || value == "v" {
+		return "-"
+	}
+	return truncate(value, 16)
 }
 
 func (s *Summary) renderWindowInput() string {
@@ -373,43 +491,65 @@ func (s *Summary) settingsHelpText() string {
 	}
 }
 
-func (s *Summary) layoutPanels(width int, channelsPanel string, walletPanel string, accountingPanel string) string {
+type summaryPanel struct {
+	style   lipgloss.Style
+	content string
+}
+
+func (s *Summary) layoutPanels(width int, panels ...summaryPanel) string {
 	const gap = 1
 
-	panels := equalizePanelHeights(
-		channelsPanel,
-		walletPanel,
-		accountingPanel,
-	)
-	channelsPanel, walletPanel, accountingPanel = panels[0], panels[1], panels[2]
+	if len(panels) == 0 {
+		return ""
+	}
 
 	if width < 72 {
-		return strings.Join([]string{
-			renderSummaryPanel(channelsPanelStyle, channelsPanel, width),
-			renderSummaryPanel(walletPanelStyle, walletPanel, width),
-			renderSummaryPanel(accountingPanelStyle, accountingPanel, width),
-		}, "\n")
+		return renderStackedSummaryPanels(width, panels...)
 	}
 
 	if width < 110 {
-		return strings.Join([]string{
-			renderSummaryPanel(channelsPanelStyle, channelsPanel, width),
-			renderSummaryPanel(walletPanelStyle, walletPanel, width),
-			renderSummaryPanel(accountingPanelStyle, accountingPanel, width),
-		}, "\n")
+		return renderStackedSummaryPanels(width, panels...)
 	}
 
-	available := width - gap*2
-	channelsWidth := available / 3
-	walletWidth := available / 3
-	accountingWidth := available - channelsWidth - walletWidth
+	equalized := equalizeSummaryPanelHeights(panels...)
+	available := width - gap*(len(equalized)-1)
+	panelWidth := available / len(equalized)
+	extra := available - panelWidth*len(equalized)
+
+	parts := make([]string, 0, len(equalized)*2-1)
+	for i, panel := range equalized {
+		w := panelWidth
+		if i == len(equalized)-1 {
+			w += extra
+		}
+		if i > 0 {
+			parts = append(parts, " ")
+		}
+		parts = append(parts, renderSummaryPanel(panel.style, panel.content, w))
+	}
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+}
+
+func renderStackedSummaryPanels(width int, panels ...summaryPanel) string {
+	rendered := make([]string, 0, len(panels))
+	for _, panel := range panels {
+		rendered = append(rendered,
+			renderSummaryPanel(panel.style, panel.content, width))
+	}
+	return strings.Join(rendered, "\n")
+}
+
+func renderSummaryPanelRow(width int, left summaryPanel, right summaryPanel) string {
+	panels := equalizeSummaryPanelHeights(left, right)
+	available := width - 1
+	leftWidth := available / 2
+	rightWidth := available - leftWidth
 
 	return lipgloss.JoinHorizontal(lipgloss.Top,
-		renderSummaryPanel(channelsPanelStyle, channelsPanel, channelsWidth),
+		renderSummaryPanel(panels[0].style, panels[0].content, leftWidth),
 		" ",
-		renderSummaryPanel(walletPanelStyle, walletPanel, walletWidth),
-		" ",
-		renderSummaryPanel(accountingPanelStyle, accountingPanel, accountingWidth),
+		renderSummaryPanel(panels[1].style, panels[1].content, rightWidth),
 	)
 }
 
@@ -492,6 +632,21 @@ func equalizePanelHeights(panels ...string) []string {
 		result[i] = panel
 	}
 
+	return result
+}
+
+func equalizeSummaryPanelHeights(panels ...summaryPanel) []summaryPanel {
+	contents := make([]string, len(panels))
+	for i := range panels {
+		contents[i] = panels[i].content
+	}
+	equalized := equalizePanelHeights(contents...)
+
+	result := make([]summaryPanel, len(panels))
+	for i := range panels {
+		result[i] = panels[i]
+		result[i].content = equalized[i]
+	}
 	return result
 }
 

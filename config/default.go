@@ -25,6 +25,18 @@ max_msg_recv_size = %[9]d
 conn_timeout = %[10]d
 pool_capacity = %[11]d
 
+# Optional loopd integration. Uncomment and adjust paths to enable the LOOP
+# menu entry. When 'enabled' is false (or this section is missing), lntop
+# runs without Loop integration and the LOOP menu entry is hidden.
+#
+# [loop]
+# enabled = true
+# address = "127.0.0.1:11010"
+# cert = "/home/user/.loop/mainnet/tls.cert"
+# macaroon = "/home/user/.loop/mainnet/loop.macaroon"
+# macaroon_timeout = 60
+# max_msg_recv_size = 209715200
+
 [views]
 # views.channels is the view displaying channel list.
 [views.channels]
@@ -140,6 +152,32 @@ columns = [
 	"HASH",      # payment hash
 	"PREIMAGE",  # payment preimage
 	"REQUEST",   # original payment request
+]
+
+# Optional Loop tab columns. These sections are only shown in the UI when
+# [loop] is enabled above.
+[views.loop]
+columns = [
+	"TYPE",       # OUT, IN, INSTANT-OUT, STATIC-IN
+	"TIME",       # initiation time
+	"STATE",      # swap state
+	"AMOUNT",     # swap amount in sats
+	"COST_SRV",   # server fee in sats
+	"COST_CHAIN", # on-chain cost in sats
+	"COST_OFFCH", # off-chain routing cost in sats
+	"LABEL",      # user label
+	"ID",         # swap hash, truncated
+	"FAILURE",    # failure reason if any
+]
+
+[views.loop_deposits]
+columns = [
+	"STATE",       # deposit state
+	"AMOUNT",      # deposit value in sats
+	"OUTPOINT",    # txid:vout
+	"CONF_HEIGHT", # confirmation block height
+	"BLOCKS_LEFT", # blocks until deposit expires
+	"SWAP_HASH",   # associated swap hash, if any
 ]
 `,
 		cfg.Logger.Type,

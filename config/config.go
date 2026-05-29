@@ -12,7 +12,19 @@ import (
 type Config struct {
 	Logger  Logger  `toml:"logger"`
 	Network Network `toml:"network"`
+	Loop    *Loop   `toml:"loop"`
 	Views   Views   `toml:"views"`
+}
+
+// Loop holds the configuration for an optional loopd backend. When nil or when
+// Enabled is false, lntop runs without Loop integration.
+type Loop struct {
+	Enabled         bool   `toml:"enabled"`
+	Address         string `toml:"address"`
+	Cert            string `toml:"cert"`
+	Macaroon        string `toml:"macaroon"`
+	MacaroonTimeOut int64  `toml:"macaroon_timeout"`
+	MaxMsgRecvSize  int    `toml:"max_msg_recv_size"`
 }
 
 type Logger struct {
@@ -41,6 +53,8 @@ type Views struct {
 	FwdingHist   *View `toml:"fwdinghist"`
 	Received     *View `toml:"received"`
 	Payments     *View `toml:"payments"`
+	Loop         *View `toml:"loop"`
+	LoopDeposits *View `toml:"loop_deposits"`
 }
 
 type ColumnOptions map[string]map[string]string

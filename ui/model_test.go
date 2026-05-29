@@ -12,6 +12,8 @@ import (
 	"github.com/hieblmi/lntop/config"
 	"github.com/hieblmi/lntop/events"
 	"github.com/hieblmi/lntop/logging"
+	"github.com/hieblmi/lntop/network"
+	loopbackend "github.com/hieblmi/lntop/network/backend/loop"
 	netmodels "github.com/hieblmi/lntop/network/models"
 	uimodels "github.com/hieblmi/lntop/ui/models"
 	"github.com/hieblmi/lntop/ui/views"
@@ -82,6 +84,62 @@ func TestHandleKeyClosingMenuCommitsPreviewSelection(t *testing.T) {
 	}
 	if m.menuOpen {
 		t.Fatalf("menu should close after F2")
+	}
+}
+
+func TestHandleKeySchedulesLoopRefreshWhenLoopBecomesVisible(t *testing.T) {
+	menu := views.NewMenuWithLoop()
+	menu.SetCurrent(views.LOOP)
+
+	m := &model{
+		app: &app.App{
+			Network: &network.Network{Loop: &loopbackend.Backend{}},
+		},
+		activeView: views.CHANNELS,
+		menuOpen:   true,
+		views: &views.Views{
+			Menu: menu,
+		},
+	}
+
+	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyF2})
+
+	if m.activeView != views.LOOP {
+		t.Fatalf("activeView = %q, want %q", m.activeView, views.LOOP)
+	}
+	if !m.loopRefreshActive {
+		t.Fatalf("expected loop refresh tick to be active")
+	}
+	if cmd == nil {
+		t.Fatalf("expected command batch")
+	}
+}
+
+func TestLoopRefreshTickStartsVisibleLoopLoads(t *testing.T) {
+	m := &model{
+		app: &app.App{
+			Network: &network.Network{Loop: &loopbackend.Backend{}},
+		},
+		activeView:        views.LOOP,
+		loopRefreshActive: true,
+	}
+
+	_, cmd := m.Update(loopViewRefreshTickMsg{})
+
+	if !m.loopInfoLoading {
+		t.Fatalf("expected loop info load to start")
+	}
+	if !m.loopSwapsLoading {
+		t.Fatalf("expected loop swaps load to start")
+	}
+	if !m.loopDepositsLoading {
+		t.Fatalf("expected loop deposits load to start")
+	}
+	if !m.loopRefreshActive {
+		t.Fatalf("expected next loop refresh tick to be scheduled")
+	}
+	if cmd == nil {
+		t.Fatalf("expected command batch")
 	}
 }
 
@@ -195,6 +253,40 @@ func TestStartupWaitsForCompletionTickBeforeEnteringApp(t *testing.T) {
 	}
 	if m.startupFinishing {
 		t.Fatalf("startup finishing flag should be cleared")
+	}
+}
+
+func TestStartupViewIncludesLoopSwapsWhenPending(t *testing.T) {
+	m := &model{
+		width:         100,
+		height:        24,
+		startupActive: true,
+		startupTasks: map[string]bool{
+			"loop_swaps": true,
+		},
+	}
+
+	got := m.renderStartupView()
+
+	if !strings.Contains(got, "Loop swaps") {
+		t.Fatalf("startup view missing Loop swaps task:\n%s", got)
+	}
+}
+
+func TestStartupViewOmitsLoopTasksWithoutLoop(t *testing.T) {
+	m := &model{
+		width:         100,
+		height:        24,
+		startupActive: true,
+		startupTasks: map[string]bool{
+			"wallet": true,
+		},
+	}
+
+	got := m.renderStartupView()
+
+	if strings.Contains(got, "Loop swaps") {
+		t.Fatalf("startup view should not show Loop swaps without loop:\n%s", got)
 	}
 }
 
@@ -388,7 +480,7 @@ func TestViewRendersSettingsPopup(t *testing.T) {
 		height:                   28,
 		activeView:               views.CHANNELS,
 		models:                   models,
-		views:                    views.New(config.Views{}, models),
+		views:                    views.New(config.Views{}, models, false),
 		settingsOpen:             true,
 		settingsCursor:           1,
 		forwardingWindowInput:    "-1w",
@@ -514,7 +606,7 @@ func TestPaymentsEnterOpensDetailWithRoute(t *testing.T) {
 	m := &model{
 		activeView: views.PAYMENTS,
 		models:     models,
-		views:      views.New(config.Views{}, models),
+		views:      views.New(config.Views{}, models, false),
 	}
 
 	m.onEnter()

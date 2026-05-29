@@ -12,6 +12,8 @@ type eventMsg struct {
 
 type pulseTickMsg struct{}
 
+type loopViewRefreshTickMsg struct{}
+
 type infoLoadedMsg struct {
 	info *netmodels.Info
 	err  error
@@ -64,4 +66,19 @@ type startupCompleteMsg struct{}
 
 type startupRetryMsg struct {
 	task string
+}
+
+type loopInfoLoadedMsg struct {
+	info *netmodels.LoopInfo
+	err  error
+}
+
+type loopSwapsLoadedMsg struct {
+	swaps []*netmodels.LoopSwap
+	err   error
+}
+
+type loopDepositsLoadedMsg struct {
+	deposits []*netmodels.LoopDeposit
+	err      error
 }

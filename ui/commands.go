@@ -129,6 +129,49 @@ func loadPaymentsCmd(net *network.Network, logger logging.Logger) tea.Cmd {
 	}
 }
 
+func loadLoopInfoCmd(net *network.Network) tea.Cmd {
+	return func() tea.Msg {
+		if net.Loop == nil {
+			return loopInfoLoadedMsg{}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		info, err := net.Loop.GetInfo(ctx)
+		if err != nil {
+			return loopInfoLoadedMsg{err: err}
+		}
+		// Augment with autoloop status + static-address summary; both
+		// tolerate failure and just leave the fields zero.
+		net.Loop.FillAutoloop(ctx, info)
+		net.Loop.FillStaticSummary(ctx, info)
+		return loopInfoLoadedMsg{info: info}
+	}
+}
+
+func loadLoopSwapsCmd(net *network.Network) tea.Cmd {
+	return func() tea.Msg {
+		if net.Loop == nil {
+			return loopSwapsLoadedMsg{}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		swaps, err := net.Loop.ListSwaps(ctx)
+		return loopSwapsLoadedMsg{swaps: swaps, err: err}
+	}
+}
+
+func loadLoopDepositsCmd(net *network.Network) tea.Cmd {
+	return func() tea.Msg {
+		if net.Loop == nil {
+			return loopDepositsLoadedMsg{}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		deposits, err := net.Loop.ListDeposits(ctx)
+		return loopDepositsLoadedMsg{deposits: deposits, err: err}
+	}
+}
+
 func loadChannelsCmd(net *network.Network, logger logging.Logger, blockHeight uint32, snapshot map[string]channelSnapshot) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
