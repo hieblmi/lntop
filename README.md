@@ -44,6 +44,8 @@ and [Lip Gloss](https://github.com/charmbracelet/lipgloss).
   start-date filtering.
 - Payments table for outgoing payments, including status, fees, failures,
   route summaries, route hops, and HTLC attempt details.
+- Optional Loop integration with a LOOP menu entry, swaps/deposits sub-tabs,
+  loopd summary data, and swap detail screens.
 - Event-driven refreshes from LND subscriptions plus a 3-second polling ticker
   for aggregate balances and per-channel state changes.
 - Runtime settings modal for forwarding history and received-invoice filters.
@@ -152,6 +154,8 @@ lntop
 | `F2`, `m` | Open or close the view menu |
 | `Up`, `Down`, `k`, `j` | Move between rows or menu items |
 | `Left`, `Right`, `h`, `l` | Move between table columns |
+| `Tab`, `Shift+Tab` | In the LOOP view, switch between swaps and deposits |
+| `1`, `2` | In the LOOP view, jump to swaps or deposits |
 | `Home`, `g` | Jump to the first row |
 | `End`, `G` | Jump to the last row |
 | `PageUp`, `PageDown` | Move by one page |
@@ -300,6 +304,44 @@ columns = [
 ]
 ```
 
+### Loop
+
+The Loop view is hidden unless optional loopd integration is enabled in
+`config.toml`. When enabled, the LOOP menu entry shows loopd version/network,
+autoloop status and budget, Loop Out/In counts and totals, and static-address
+summary data when loopd supports it.
+
+The Swaps sub-tab lists legacy Loop In/Out swaps, instant-out swaps, and
+static-address Loop In swaps. Press `Enter` on a swap to open details. The
+Deposits sub-tab lists static-address deposits. Use `Tab`/`Shift+Tab` or
+`1`/`2` to switch sub-tabs.
+
+Enable it with `[loop]`:
+
+```toml
+[loop]
+enabled = true
+address = "127.0.0.1:11010"
+cert = "/home/user/.loop/mainnet/tls.cert"
+macaroon = "/home/user/.loop/mainnet/loop.macaroon"
+macaroon_timeout = 60
+max_msg_recv_size = 209715200
+```
+
+Configure swap and deposit columns with `[views.loop]` and
+`[views.loop_deposits]`:
+
+```toml
+[views.loop]
+columns = [
+  "TYPE", "TIME", "STATE", "AMOUNT", "COST_SRV",
+  "COST_CHAIN", "COST_OFFCH", "LABEL", "ID", "FAILURE",
+]
+
+[views.loop_deposits]
+columns = ["STATE", "AMOUNT", "OUTPOINT", "CONF_HEIGHT", "BLOCKS_LEFT", "SWAP_HASH"]
+```
+
 ## Configuration Reference
 
 `lntop` uses TOML. If `--config` is not supplied, it reads
@@ -347,6 +389,27 @@ pool_capacity = 6
 | `conn_timeout` | gRPC connection-pool reuse timeout as a Go duration value in nanoseconds |
 | `pool_capacity` | gRPC connection-pool size. The LND backend enforces a minimum of 6 |
 
+### Loop
+
+```toml
+[loop]
+enabled = true
+address = "127.0.0.1:11010"
+cert = "/home/user/.loop/mainnet/tls.cert"
+macaroon = "/home/user/.loop/mainnet/loop.macaroon"
+macaroon_timeout = 60
+max_msg_recv_size = 209715200
+```
+
+| Field | Description |
+| --- | --- |
+| `enabled` | Enables the optional loopd backend and shows the LOOP menu entry |
+| `address` | loopd gRPC address in `host:port` format |
+| `cert` | Path to loopd `tls.cert` |
+| `macaroon` | Path to the loopd macaroon |
+| `macaroon_timeout` | Timeout constraint added to the macaroon, in seconds |
+| `max_msg_recv_size` | Maximum loopd gRPC receive message size, in bytes |
+
 ### Alias Overrides
 
 Not all peers publish useful aliases. You can annotate pubkeys yourself:
@@ -373,6 +436,8 @@ editing the matching `[views.<name>]` section. Column names are case-sensitive.
 | `fwdinghist` | `ALIAS_IN`, `ALIAS_OUT`, `AMT_IN`, `AMT_OUT`, `FEE`, `TIMESTAMP_NS`, `CHAN_ID_IN`, `CHAN_ID_OUT`, `INBOUND_BASE_IN`, `INBOUND_RATE_IN` |
 | `received` | `TYPE`, `TIME`, `AMOUNT`, `MEMO`, `R_HASH` |
 | `payments` | `TYPE`, `TIME`, `STATUS`, `AMOUNT`, `AMOUNT_MSAT`, `FEE`, `FEE_MSAT`, `ATTEMPTS`, `FAILURE`, `INDEX`, `HASH`, `PREIMAGE`, `REQUEST` |
+| `loop` | `TYPE`, `TIME`, `STATE`, `AMOUNT`, `COST_SRV`, `COST_CHAIN`, `COST_OFFCH`, `LABEL`, `ID`, `FAILURE` |
+| `loop_deposits` | `STATE`, `AMOUNT`, `OUTPOINT`, `CONF_HEIGHT`, `BLOCKS_LEFT`, `SWAP_HASH` |
 
 Inbound fee columns require LND versions that expose inbound fee fields
 (LND 0.18 and newer).

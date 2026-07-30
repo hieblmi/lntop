@@ -3,6 +3,7 @@ package pubsub
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/hieblmi/lntop/events"
 	"github.com/hieblmi/lntop/logging"
@@ -150,6 +151,51 @@ func (p *PubSub) graphUpdates(ctx context.Context, sub chan *events.Event) {
 	}()
 }
 
+// loopSwaps streams swap state changes from loopd's Monitor RPC into the
+// shared event channel as LoopSwapUpdated. Runs only when network.Loop is
+// set; reconnects with a 5-second backoff if the stream dies, until the
+// context is canceled.
+func (p *PubSub) loopSwaps(ctx context.Context, sub chan *events.Event) {
+	if p.network.Loop == nil {
+		return
+	}
+	p.wg.Add(2)
+	swaps := make(chan *models.LoopSwap)
+	ctx, cancel := context.WithCancel(ctx)
+
+	go func() {
+		defer p.wg.Done()
+		for swap := range swaps {
+			p.logger.Debug("receive loop swap update",
+				logging.String("id", swap.ID))
+			select {
+			case sub <- events.NewWithData(events.LoopSwapUpdated, swap):
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	go func() {
+		defer p.wg.Done()
+		defer close(swaps)
+		for {
+			err := p.network.Loop.SubscribeSwaps(ctx, swaps)
+			if err != nil {
+				p.logger.Info("loop: monitor stream ended",
+					logging.Error(err))
+			}
+			select {
+			case <-ctx.Done():
+				cancel()
+				return
+			case <-time.After(5 * time.Second):
+				// Retry the subscription.
+			}
+		}
+	}()
+}
+
 func (p *PubSub) channels(ctx context.Context, sub chan *events.Event) {
 	p.wg.Add(2)
 	channels := make(chan *models.ChannelUpdate)
@@ -197,12 +243,17 @@ func (p *PubSub) Run(ctx context.Context, sub chan *events.Event) {
 	p.routingUpdates(ctx, sub)
 	p.channels(ctx, sub)
 	p.graphUpdates(ctx, sub)
-	p.ticker(ctx, sub,
+	p.loopSwaps(ctx, sub)
+	tickerFns := []tickerFunc{
 		withTickerInfo(),
 		withTickerWalletBalance(),
 		withTickerChannelsBalance(),
 		withTickerChannels(),
-	)
+	}
+	if p.network.Loop != nil {
+		tickerFns = append(tickerFns, withTickerLoopTick())
+	}
+	p.ticker(ctx, sub, tickerFns...)
 
 	<-p.stop
 	cancel()

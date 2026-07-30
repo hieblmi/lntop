@@ -211,6 +211,28 @@ func channelStateChanged(old, current *models.Channel) bool {
 	return false
 }
 
+// withTickerLoopTick emits LoopStateTick periodically when a loopd is wired
+// in. We don't bother diffing here — the UI's *Loading flags coalesce
+// concurrent reloads, and an idle reload every ~9 seconds is cheap relative
+// to the network round-trips a node operator does anyway.
+//
+// The cadence is enforced by the ticker that owns these functions (3s base);
+// we step down to ~9s by skipping two out of every three ticks.
+func withTickerLoopTick() tickerFunc {
+	var skip int
+	return func(ctx context.Context, _ logging.Logger, _ *network.Network, sub chan *events.Event) {
+		skip++
+		if skip%3 != 0 {
+			return
+		}
+		select {
+		case sub <- events.New(events.LoopStateTick):
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 func cloneChannels(channels []*models.Channel) []*models.Channel {
 	cloned := make([]*models.Channel, 0, len(channels))
 	for _, channel := range channels {

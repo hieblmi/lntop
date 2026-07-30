@@ -25,6 +25,9 @@ type Models struct {
 	FwdingHist      *FwdingHist
 	Received        *Received
 	Payments        *Payments
+	LoopInfo        *LoopInfoModel
+	LoopSwaps       *LoopSwaps
+	LoopDeposits    *LoopDeposits
 }
 
 func New(app *app.App) *Models {
@@ -71,6 +74,9 @@ func New(app *app.App) *Models {
 		FwdingHist:      &fwdingHist,
 		Received:        rec,
 		Payments:        &Payments{},
+		LoopInfo:        &LoopInfoModel{},
+		LoopSwaps:       &LoopSwaps{},
+		LoopDeposits:    &LoopDeposits{},
 	}
 }
 

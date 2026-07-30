@@ -14,6 +14,8 @@ const (
 	WalletBalanceUpdated  = "wallet.balance.updated"
 	RoutingEventUpdated   = "routing.event.updated"
 	GraphUpdated          = "graph.updated"
+	LoopSwapUpdated       = "loop.swap.updated"
+	LoopStateTick         = "loop.state.tick"
 )
 
 type Event struct {

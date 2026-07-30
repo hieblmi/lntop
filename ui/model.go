@@ -29,11 +29,12 @@ type model struct {
 
 	width, height int
 
-	activeView  string
-	inDetail    bool
-	menuOpen    bool
-	pulseFrame  int
-	pulseActive bool
+	activeView        string
+	inDetail          bool
+	menuOpen          bool
+	pulseFrame        int
+	pulseActive       bool
+	loopRefreshActive bool
 
 	infoLoading              bool
 	walletBalanceLoading     bool
@@ -50,6 +51,9 @@ type model struct {
 	receivedLoading          bool
 	paymentsLoading          bool
 	currentNodeLoading       bool
+	loopInfoLoading          bool
+	loopSwapsLoading         bool
+	loopDepositsLoading      bool
 
 	startupActive    bool
 	startupFinishing bool
@@ -71,6 +75,18 @@ var startupTaskLabels = []struct {
 	{"channels", "Channels"},
 }
 
+// startupLoopTaskLabels are appended to startupTaskLabels when loopd is
+// enabled. Kept separate so non-loop installs see the same progress UI as
+// before.
+var startupLoopTaskLabels = []struct {
+	key   string
+	label string
+}{
+	{"loop_info", "Loop info"},
+	{"loop_swaps", "Loop swaps"},
+	{"loop_deposits", "Loop deposits"},
+}
+
 var forwardingWindowRE = regexp.MustCompile(`^(|-\d{1,18}[smhdwMy]|\d+)$`)
 var settingsDateRE = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 
@@ -83,11 +99,12 @@ const (
 
 func newModel(a *app.App, sub chan *events.Event) *model {
 	m := models.New(a)
+	loopEnabled := a.Network != nil && a.Network.Loop != nil
 	return &model{
 		app:        a,
 		logger:     a.Logger.With(logging.String("logger", "ui")),
 		models:     m,
-		views:      views.New(a.Config.Views, m),
+		views:      views.New(a.Config.Views, m, loopEnabled),
 		sub:        sub,
 		activeView: views.CHANNELS,
 	}
@@ -95,7 +112,7 @@ func newModel(a *app.App, sub chan *events.Event) *model {
 
 func (m *model) Init() tea.Cmd {
 	m.startInitialLoad()
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		waitForEvent(m.sub),
 		m.ensurePulseTick(),
 		m.loadInfoCmd(),
@@ -106,12 +123,29 @@ func (m *model) Init() tea.Cmd {
 		m.loadReceivedCmd(),
 		m.loadPaymentsCmd(),
 		m.loadChannelsCmd(),
-	)
+	}
+	if m.loopEnabled() {
+		cmds = append(cmds,
+			m.loadLoopInfoCmd(),
+			m.loadLoopSwapsCmd(),
+			m.loadLoopDepositsCmd())
+	}
+	return tea.Batch(cmds...)
+}
+
+func (m *model) loopEnabled() bool {
+	return m.app != nil && m.app.Network != nil && m.app.Network.Loop != nil
 }
 
 func pulseTickCmd() tea.Cmd {
 	return tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg {
 		return pulseTickMsg{}
+	})
+}
+
+func loopViewRefreshTickCmd() tea.Cmd {
+	return tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+		return loopViewRefreshTickMsg{}
 	})
 }
 
@@ -173,6 +207,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.pulseActive = false
 		return m, nil
+
+	case loopViewRefreshTickMsg:
+		m.loopRefreshActive = false
+		return m, m.refreshVisibleLoopCmd()
 
 	case startupCompleteMsg:
 		if m.startupFinishing && !m.hasStartupLoadsInFlight() && len(m.startupTasks) == 0 {
@@ -291,6 +329,42 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case loopInfoLoadedMsg:
+		m.loopInfoLoading = false
+		if msg.err != nil {
+			m.logger.Error("refresh loop info failed", logging.Error(msg.err))
+			m.views.Loop.Error = msg.err.Error()
+		} else if msg.info != nil {
+			m.models.ApplyLoopInfo(msg.info)
+			m.views.Loop.Error = ""
+		}
+		m.finishStartupTask("loop_info")
+		return m, m.completeStartupCmdIfReady()
+
+	case loopSwapsLoadedMsg:
+		m.loopSwapsLoading = false
+		if msg.err != nil {
+			m.logger.Error("refresh loop swaps failed", logging.Error(msg.err))
+			m.views.Loop.Error = msg.err.Error()
+		} else {
+			m.models.ApplyLoopSwaps(msg.swaps)
+			m.views.Loop.Error = ""
+		}
+		m.finishStartupTask("loop_swaps")
+		return m, m.completeStartupCmdIfReady()
+
+	case loopDepositsLoadedMsg:
+		m.loopDepositsLoading = false
+		if msg.err != nil {
+			m.logger.Error("refresh loop deposits failed", logging.Error(msg.err))
+			m.views.Loop.Error = msg.err.Error()
+		} else {
+			m.models.ApplyLoopDeposits(msg.deposits)
+			m.views.Loop.Error = ""
+		}
+		m.finishStartupTask("loop_deposits")
+		return m, m.completeStartupCmdIfReady()
+
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -347,6 +421,19 @@ func (m *model) handleEvent(e *events.Event) tea.Cmd {
 		if err := m.models.RefreshPolicies(e.Data)(ctx); err != nil {
 			m.logger.Error("refresh policies failed", logging.Error(err))
 		}
+	case events.LoopSwapUpdated:
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := m.models.RefreshLoopSwap(e.Data)(ctx); err != nil {
+			m.logger.Error("refresh loop swap failed", logging.Error(err))
+		}
+	case events.LoopStateTick:
+		if m.loopEnabled() {
+			cmds = append(cmds,
+				m.loadLoopInfoCmd(),
+				m.loadLoopSwapsCmd(),
+				m.loadLoopDepositsCmd())
+		}
 	}
 	return tea.Batch(cmds...)
 }
@@ -360,7 +447,7 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if msg.String() == "f9" {
 		m.beginSettingsEdit()
-		return m, m.ensurePulseTick()
+		return m, tea.Batch(m.ensurePulseTick(), m.ensureLoopRefreshTick())
 	}
 
 	if m.settingsOpen {
@@ -386,24 +473,28 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.views.Menu.SetCurrent(m.activeView)
 			m.menuOpen = true
 		}
-		return m, tea.Batch(tea.ClearScreen, m.ensurePulseTick())
+		return m, tea.Batch(
+			tea.ClearScreen,
+			m.ensurePulseTick(),
+			m.refreshVisibleLoopCmd(),
+		)
 	}
 
 	// If menu is open, handle menu navigation.
 	if m.menuOpen {
 		next, cmd := m.handleMenuKey(msg)
-		return next, tea.Batch(cmd, m.ensurePulseTick())
+		return next, tea.Batch(cmd, m.ensurePulseTick(), m.refreshVisibleLoopCmd())
 	}
 
 	// If in detail view, handle detail navigation.
 	if m.inDetail {
 		next, cmd := m.handleDetailKey(msg)
-		return next, tea.Batch(cmd, m.ensurePulseTick())
+		return next, tea.Batch(cmd, m.ensurePulseTick(), m.ensureLoopRefreshTick())
 	}
 
 	// Table view navigation.
 	next, cmd := m.handleTableKey(msg)
-	return next, tea.Batch(cmd, m.ensurePulseTick())
+	return next, tea.Batch(cmd, m.ensurePulseTick(), m.ensureLoopRefreshTick())
 }
 
 func (m *model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -505,6 +596,8 @@ func (m *model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.views.Transaction.ScrollUp()
 		case views.PAYMENTS:
 			m.views.Payment.ScrollUp()
+		case views.LOOP:
+			m.views.LoopSwap.ScrollUp()
 		}
 	case "down", "j":
 		switch m.activeView {
@@ -514,6 +607,8 @@ func (m *model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.views.Transaction.ScrollDown()
 		case views.PAYMENTS:
 			m.views.Payment.ScrollDown()
+		case views.LOOP:
+			m.views.LoopSwap.ScrollDown()
 		}
 	case "home", "g":
 		if m.activeView == views.CHANNELS {
@@ -521,6 +616,9 @@ func (m *model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.activeView == views.PAYMENTS {
 			m.views.Payment.ScrollHome()
+		}
+		if m.activeView == views.LOOP {
+			m.views.LoopSwap.ScrollHome()
 		}
 	case "c":
 		if m.activeView == views.CHANNELS {
@@ -535,6 +633,33 @@ func (m *model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *model) handleTableKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	pageSize := m.mainHeight() - 2
+
+	// LOOP-only keys (tab strip + numeric tab selectors) come first so they
+	// don't get swallowed by generic cursor/sort handling below.
+	if m.activeView == views.LOOP {
+		switch msg.String() {
+		case "tab":
+			next := m.views.Loop.ActiveTab + 1
+			if next > views.LoopTabDeposits {
+				next = views.LoopTabSwaps
+			}
+			m.views.Loop.SetActiveTab(next)
+			return m, nil
+		case "shift+tab":
+			next := m.views.Loop.ActiveTab - 1
+			if next < views.LoopTabSwaps {
+				next = views.LoopTabDeposits
+			}
+			m.views.Loop.SetActiveTab(next)
+			return m, nil
+		case "1":
+			m.views.Loop.SetActiveTab(views.LoopTabSwaps)
+			return m, nil
+		case "2":
+			m.views.Loop.SetActiveTab(views.LoopTabDeposits)
+			return m, nil
+		}
+	}
 
 	switch msg.String() {
 	case "up", "k":
@@ -591,6 +716,8 @@ func (m *model) cursorDown() {
 		m.views.Received.CursorDown()
 	case views.PAYMENTS:
 		m.views.Payments.CursorDown()
+	case views.LOOP:
+		m.views.Loop.CursorDown()
 	}
 }
 
@@ -608,6 +735,8 @@ func (m *model) cursorUp() {
 		m.views.Received.CursorUp()
 	case views.PAYMENTS:
 		m.views.Payments.CursorUp()
+	case views.LOOP:
+		m.views.Loop.CursorUp()
 	}
 }
 
@@ -625,6 +754,8 @@ func (m *model) columnLeft() {
 		m.views.Received.ColumnLeft()
 	case views.PAYMENTS:
 		m.views.Payments.ColumnLeft()
+	case views.LOOP:
+		m.views.Loop.ColumnLeft()
 	}
 }
 
@@ -642,6 +773,8 @@ func (m *model) columnRight() {
 		m.views.Received.ColumnRight()
 	case views.PAYMENTS:
 		m.views.Payments.ColumnRight()
+	case views.LOOP:
+		m.views.Loop.ColumnRight()
 	}
 }
 
@@ -659,6 +792,8 @@ func (m *model) home() {
 		m.views.Received.Home()
 	case views.PAYMENTS:
 		m.views.Payments.Home()
+	case views.LOOP:
+		m.views.Loop.Home()
 	}
 }
 
@@ -676,6 +811,8 @@ func (m *model) end() {
 		m.views.Received.End()
 	case views.PAYMENTS:
 		m.views.Payments.End()
+	case views.LOOP:
+		m.views.Loop.End()
 	}
 }
 
@@ -693,6 +830,8 @@ func (m *model) pageDown(ps int) {
 		m.views.Received.PageDown(ps)
 	case views.PAYMENTS:
 		m.views.Payments.PageDown(ps)
+	case views.LOOP:
+		m.views.Loop.PageDown(ps)
 	}
 }
 
@@ -710,6 +849,8 @@ func (m *model) pageUp(ps int) {
 		m.views.Received.PageUp(ps)
 	case views.PAYMENTS:
 		m.views.Payments.PageUp(ps)
+	case views.LOOP:
+		m.views.Loop.PageUp(ps)
 	}
 }
 
@@ -727,6 +868,8 @@ func (m *model) sort(order models.Order) {
 		m.views.Received.Sort("", order)
 	case views.PAYMENTS:
 		m.views.Payments.Sort("", order)
+	case views.LOOP:
+		m.views.Loop.Sort("", order)
 	}
 }
 
@@ -746,6 +889,13 @@ func (m *model) onEnter() {
 		m.models.Payments.SetCurrent(m.views.Payments.Cursor)
 		m.views.Payment.Offset = 0
 		m.inDetail = true
+	case views.LOOP:
+		// Only the Swaps sub-tab has a detail view.
+		if m.views.Loop.ActiveTab == views.LoopTabSwaps {
+			m.models.LoopSwaps.SetCurrent(m.views.Loop.Index())
+			m.views.LoopSwap.Offset = 0
+			m.inDetail = true
+		}
 	}
 }
 
@@ -811,6 +961,8 @@ func (m *model) View() string {
 			mainContent = m.views.Transaction.Render(renderW, mainH)
 		case views.PAYMENTS:
 			mainContent = m.views.Payment.Render(renderW, mainH)
+		case views.LOOP:
+			mainContent = m.views.LoopSwap.Render(renderW, mainH)
 		default:
 			mainContent = m.renderActiveTable(renderW, mainH)
 		}
@@ -879,6 +1031,38 @@ func (m *model) ensurePulseTick() tea.Cmd {
 	return pulseTickCmd()
 }
 
+func (m *model) loopViewVisible() bool {
+	if !m.loopEnabled() {
+		return false
+	}
+	if m.activeView == views.LOOP {
+		return true
+	}
+	return m.menuOpen && !m.inDetail &&
+		m.views != nil && m.views.Menu != nil &&
+		m.views.Menu.Current() == views.LOOP
+}
+
+func (m *model) ensureLoopRefreshTick() tea.Cmd {
+	if m.loopRefreshActive || !m.loopViewVisible() {
+		return nil
+	}
+	m.loopRefreshActive = true
+	return loopViewRefreshTickCmd()
+}
+
+func (m *model) refreshVisibleLoopCmd() tea.Cmd {
+	if !m.loopViewVisible() {
+		return nil
+	}
+	return tea.Batch(
+		m.loadLoopInfoCmd(),
+		m.loadLoopSwapsCmd(),
+		m.loadLoopDepositsCmd(),
+		m.ensureLoopRefreshTick(),
+	)
+}
+
 func (m *model) loadInfoCmd() tea.Cmd {
 	if m.infoLoading {
 		return nil
@@ -935,6 +1119,30 @@ func (m *model) loadPaymentsCmd() tea.Cmd {
 	return loadPaymentsCmd(m.app.Network, m.logger)
 }
 
+func (m *model) loadLoopInfoCmd() tea.Cmd {
+	if !m.loopEnabled() || m.loopInfoLoading {
+		return nil
+	}
+	m.loopInfoLoading = true
+	return loadLoopInfoCmd(m.app.Network)
+}
+
+func (m *model) loadLoopSwapsCmd() tea.Cmd {
+	if !m.loopEnabled() || m.loopSwapsLoading {
+		return nil
+	}
+	m.loopSwapsLoading = true
+	return loadLoopSwapsCmd(m.app.Network)
+}
+
+func (m *model) loadLoopDepositsCmd() tea.Cmd {
+	if !m.loopEnabled() || m.loopDepositsLoading {
+		return nil
+	}
+	m.loopDepositsLoading = true
+	return loadLoopDepositsCmd(m.app.Network)
+}
+
 func (m *model) loadChannelsCmd() tea.Cmd {
 	if m.channelsLoading {
 		return nil
@@ -983,8 +1191,9 @@ func (m *model) refreshChannelAgesIfNeeded() tea.Cmd {
 func (m *model) startInitialLoad() {
 	m.startupActive = true
 	m.startupFinishing = false
-	m.startupTasks = make(map[string]bool, len(startupTaskLabels))
-	for _, task := range startupTaskLabels {
+	labels := m.activeStartupTaskLabels()
+	m.startupTasks = make(map[string]bool, len(labels))
+	for _, task := range labels {
 		m.startupTasks[task.key] = true
 	}
 }
@@ -1010,7 +1219,10 @@ func (m *model) hasStartupLoadsInFlight() bool {
 		m.forwardingHistLoading ||
 		m.channelsLoading ||
 		m.receivedLoading ||
-		m.paymentsLoading
+		m.paymentsLoading ||
+		m.loopInfoLoading ||
+		m.loopSwapsLoading ||
+		m.loopDepositsLoading
 }
 
 func (m *model) completeStartupCmdIfReady() tea.Cmd {
@@ -1039,6 +1251,9 @@ func (m *model) startupRetryTaskCmd(task string) tea.Cmd {
 	case "channels":
 		return m.loadChannelsCmd()
 	default:
+		// Loop tasks are not retried here; on failure the LoopStateTick
+		// ticker (~9s) drives the next attempt so startup stays
+		// non-blocking when loopd is unreachable.
 		return nil
 	}
 }
@@ -1064,7 +1279,8 @@ func (m *model) renderStartupView() string {
 	doneStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e"))
 	pendingStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#333333"))
 
-	total := len(startupTaskLabels)
+	labels := m.activeStartupTaskLabels()
+	total := len(labels)
 	remaining := len(m.startupTasks)
 	completed := total - remaining
 	filled := 0
@@ -1085,7 +1301,7 @@ func (m *model) renderStartupView() string {
 	if m.startupWaiting != "" {
 		waiting = m.startupWaiting
 	} else {
-		for _, task := range startupTaskLabels {
+		for _, task := range labels {
 			if m.startupTasks[task.key] {
 				waiting = task.label
 				break
@@ -1105,7 +1321,7 @@ func (m *model) renderStartupView() string {
 	))
 	body = append(body, lipgloss.NewStyle().Align(lipgloss.Center).Width(renderW).Render(fmt.Sprintf("[%s]", bar.String())))
 
-	for _, task := range startupTaskLabels {
+	for _, task := range labels {
 		status := pendingStyle.Render("\u25cb")
 		if !m.startupTasks[task.key] {
 			status = doneStyle.Render("\u25cf")
@@ -1139,6 +1355,29 @@ func (m *model) renderStartupView() string {
 	return strings.Join(lines, "\n")
 }
 
+func (m *model) activeStartupTaskLabels() []struct {
+	key   string
+	label string
+} {
+	labels := append([]struct {
+		key   string
+		label string
+	}{}, startupTaskLabels...)
+	if m.loopEnabled() || m.hasStartupLoopTask() {
+		labels = append(labels, startupLoopTaskLabels...)
+	}
+	return labels
+}
+
+func (m *model) hasStartupLoopTask() bool {
+	for _, task := range startupLoopTaskLabels {
+		if m.startupTasks[task.key] {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *model) currentTableView() string {
 	if m.menuOpen {
 		if preview := m.views.Menu.Current(); preview != "" {
@@ -1166,6 +1405,8 @@ func (m *model) renderTable(viewName string, width, height int) string {
 		return m.views.Received.Render(width, height)
 	case views.PAYMENTS:
 		return m.views.Payments.Render(width, height)
+	case views.LOOP:
+		return m.views.Loop.Render(width, height)
 	}
 	return ""
 }

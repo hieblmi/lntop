@@ -23,6 +23,8 @@ const (
 	FWDINGHIST   = "fwdinghist"
 	RECEIVED     = "received"
 	PAYMENTS     = "payments"
+	LOOP         = "loop"
+	LOOP_SWAP    = "loop_swap"
 	MENU         = "menu"
 )
 
@@ -40,13 +42,23 @@ type Views struct {
 	FwdingHist   *FwdingHist
 	Received     *Received
 	Payments     *Payments
+	Loop         *Loop
+	LoopSwap     *LoopSwap
+
+	// LoopEnabled mirrors the [loop] enabled flag so the rest of the UI
+	// can hide the LOOP menu entry without touching config directly.
+	LoopEnabled bool
 }
 
-func New(cfg config.Views, m *models.Models) *Views {
-	return &Views{
+func New(cfg config.Views, m *models.Models, loopEnabled bool) *Views {
+	menu := NewMenu()
+	if loopEnabled {
+		menu = NewMenuWithLoop()
+	}
+	v := &Views{
 		Header:       NewHeader(m.Info),
 		Summary:      NewSummary(m.Info, m.ChannelsBalance, m.WalletBalance, m.Channels, m.FwdingHist, m.Received),
-		Menu:         NewMenu(),
+		Menu:         menu,
 		Channels:     NewChannels(cfg.Channels, m.Channels),
 		Channel:      NewChannel(m.Channels),
 		Transactions: NewTransactions(cfg.Transactions, m.Transactions),
@@ -56,7 +68,12 @@ func New(cfg config.Views, m *models.Models) *Views {
 		FwdingHist:   NewFwdingHist(cfg.FwdingHist, m.FwdingHist, m.Channels),
 		Received:     NewReceived(cfg.Received, m.Received),
 		Payments:     NewPayments(cfg.Payments, m.Payments),
+		Loop:         NewLoop(cfg.Loop, cfg.LoopDeposits, m.LoopInfo, m.LoopSwaps, m.LoopDeposits),
+		LoopSwap:     NewLoopSwap(m.LoopSwaps),
+		LoopEnabled:  loopEnabled,
 	}
+	v.Summary.SetLoopState(loopEnabled, m.LoopInfo, m.LoopSwaps, m.LoopDeposits)
+	return v
 }
 
 // Shared styles.
