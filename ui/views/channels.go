@@ -259,12 +259,19 @@ func NewChannels(cfg *config.View, chans *models.Channels) *Channels {
 			channels.columns[i] = channelsColumn{
 				width: 15,
 				name:  fmt.Sprintf("%-15s", columns[i]),
-				sort: func(order models.Order) models.ChannelsSort {
-					return func(c1, c2 *netmodels.Channel) bool {
-						return models.StringSort(c1.Node.Alias, c2.Node.Alias, order)
+			sort: func(order models.Order) models.ChannelsSort {
+				return func(c1, c2 *netmodels.Channel) bool {
+					var a1, a2 string
+					if c1.Node != nil {
+						a1 = c1.Node.Alias
 					}
-				},
-				display: func(c *netmodels.Channel, opts ...color.Option) string {
+					if c2.Node != nil {
+						a2 = c2.Node.Alias
+					}
+					return models.StringSort(a1, a2, order)
+				}
+			},
+			display: func(c *netmodels.Channel, opts ...color.Option) string {
 					aliasColor := color.White(opts...)
 					alias, forced := c.ShortAlias()
 					if forced {
